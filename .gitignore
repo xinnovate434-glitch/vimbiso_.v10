@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+.output/
+.vinxi/
+.nitro/
+.wrangler/
+.vercel/
+.DS_Store
+*.log
+.turbo/
+coverage/
