@@ -1,0 +1,10 @@
+{
+  "VITE_AUTH_ENABLED": "true",
+  "VITE_SUPABASE_URL": "https://vyinaukzfrwvvxwkanmv.supabase.co",
+  "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5aW5hdWt6ZnJ3dnZ4d2thbm12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzNTY0NjIsImV4cCI6MjEwNTkzMjQ2Mn0.kw3N6-Db2yqimXvC4qJtBPX8mlTZ3s_WvTYLI7DnbTg",
+  "VITE_OPENWEATHER_API_KEY": "656a584d5b9ea33321a7b9571661368d",
+  "VITE_MAPBOX_TOKEN": "pk.eyJ1IjoiZGlyZWN0b3ItNDM0IiwiYSI6ImNtdWhkcHd2MzE1ODUyenBnYThiZ2trMWIifQ.CyiKK9X-pdqRCL613tlysQ",
+  "deploy": {
+    "database": true
+  }
+}
