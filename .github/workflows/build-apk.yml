@@ -1,0 +1,55 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Prepare UI
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+        run: |
+          mkdir -p dist
+          cp -r mobile-www/* dist/
+          python3 -c "import os,json,pathlib; cfg={'supabaseUrl':os.environ.get('VITE_SUPABASE_URL') or '','supabaseAnon':os.environ.get('VITE_SUPABASE_ANON_KEY') or '','geminiKey':os.environ.get('VITE_GEMINI_API_KEY') or ''}; pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG = '+json.dumps(cfg)+';'); print('ok')"
+          test -f dist/index.html
+          ls dist
+
+      - name: Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6 --no-audit --no-fund
+          echo '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
+          npx cap add android
+          npx cap sync android
+
+      - name: Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: vimbiso-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
