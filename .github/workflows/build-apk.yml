@@ -7,60 +7,61 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Setup Node 22
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Prepare Vimbiso web UI
+      - name: Prepare UI + copy market images
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
         run: |
           set -e
-          mkdir -p dist
-          cp -r mobile-www/* dist/
-          python3 - <<'PY'
+          mkdir -p dist/images
+          cp -r mobile-www/* dist/ 2>/dev/null || true
+          # Images already on GitHub under public/images
+          if [ -d public/images ]; then
+            cp -r public/images/* dist/images/
+            echo "Copied public/images -> dist/images"
+          fi
+          ls dist/images | wc -l
+          ls -lh dist/images/bg-welcome.jpg
+          du -sh dist dist/images
+          python3 -c "
           import os, json, pathlib
           cfg = {
-            "supabaseUrl": os.environ.get("VITE_SUPABASE_URL") or "",
-            "supabaseAnon": os.environ.get("VITE_SUPABASE_ANON_KEY") or "",
-            "geminiKey": os.environ.get("VITE_GEMINI_API_KEY") or "",
+            'supabaseUrl': os.environ.get('VITE_SUPABASE_URL') or '',
+            'supabaseAnon': os.environ.get('VITE_SUPABASE_ANON_KEY') or '',
+            'geminiKey': os.environ.get('VITE_GEMINI_API_KEY') or '',
+            'weatherKey': os.environ.get('VITE_OPENWEATHER_API_KEY') or '',
           }
-          pathlib.Path("dist/config.js").write_text(
-              "window.VIMBISO_CFG = " + json.dumps(cfg) + ";\n"
-          )
-          print("supabase:", bool(cfg["supabaseUrl"]), "gemini:", bool(cfg["geminiKey"]))
-          PY
-          test -f dist/index.html && test -f dist/app.js
-          ls -la dist
+          pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG = ' + json.dumps(cfg) + ';')
+          print('supabase', bool(cfg['supabaseUrl']))
+          "
+          test -f dist/index.html
+          test -f dist/images/bg-welcome.jpg
 
-      - name: Capacitor Android
+      - name: Capacitor
         run: |
-          set -e
-          npm init -y >/dev/null 2>&1 || true
+          npm init -y
           npm install @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6 --no-audit --no-fund
-          printf '%s\n' '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"},"android":{"allowMixedContent":true}}' > capacitor.config.json
+          echo '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
           npx cap add android
           npx cap sync android
-          MAN=android/app/src/main/AndroidManifest.xml
-          if [ -f "$MAN" ]; then
-            for p in INTERNET ACCESS_NETWORK_STATE; do
-              grep -q "android.permission.$p" "$MAN" || \
-                sed -i "/<application/i\\    <uses-permission android:name=\"android.permission.$p\" />" "$MAN"
-            done
-          fi
 
-      - name: Setup Java 17
+      - name: Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Gradle APK
+      - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
