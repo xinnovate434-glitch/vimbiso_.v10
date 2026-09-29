@@ -59,6 +59,10 @@ type State = {
   name: string;
   city: string;
   phone: string;
+  profilePhoto: string | null;
+  trustScore: number;
+  rating: number;
+  completedTrades: number;
   toast: Toast | null;
   onboardStep: number;
   suStep: number;
@@ -104,6 +108,7 @@ type Actions = {
   toggleLite: () => void;
   toastMsg: (message: string) => void;
   set: (partial: Partial<State>) => void;
+  signOut: () => void;
 };
 
 export const HIDE_NAV: Screen[] = [
@@ -129,20 +134,77 @@ function homeFor(role: Role): Screen {
   return "home";
 }
 
+
+const SESSION_KEY = "vimbiso_session_v1";
+
+type SessionSnap = {
+  userId: string | null;
+  userStatus: string;
+  vimbisoId: string | null;
+  name: string;
+  city: string;
+  phone: string;
+  role: Role;
+  regRole: Role;
+  profilePhoto: string | null;
+  trustScore: number;
+  rating: number;
+  completedTrades: number;
+};
+
+function loadSession(): Partial<SessionSnap> {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as SessionSnap;
+  } catch {
+    return {};
+  }
+}
+
+function saveSession(s: Partial<State>) {
+  try {
+    const snap: SessionSnap = {
+      userId: s.userId ?? null,
+      userStatus: s.userStatus ?? "pending",
+      vimbisoId: s.vimbisoId ?? null,
+      name: s.name ?? "",
+      city: s.city ?? "Harare",
+      phone: s.phone ?? "",
+      role: (s.role as Role) || "buyer",
+      regRole: (s.regRole as Role) || "buyer",
+      profilePhoto: s.profilePhoto ?? null,
+      trustScore: s.trustScore ?? 0,
+      rating: s.rating ?? 0,
+      completedTrades: s.completedTrades ?? 0,
+    };
+    if (snap.userId) localStorage.setItem(SESSION_KEY, JSON.stringify(snap));
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore quota */
+  }
+}
+
+const _boot = loadSession();
+
 export const useVimbiso = create<State & Actions>((set, get) => ({
-  screen: "splash",
-  role: "buyer",
-  regRole: "buyer",
+  screen: _boot.userId ? homeFor((_boot.role as Role) || "buyer") : "splash",
+  role: (_boot.role as Role) || "buyer",
+  regRole: (_boot.regRole as Role) || "buyer",
   lang: "en",
   lite: false,
   online: false,
   delOnline: false,
-  userId: null,
-  userStatus: "pending",
-  vimbisoId: null,
-  name: "",
-  city: "Harare",
-  phone: "",
+  userId: _boot.userId ?? null,
+  userStatus: _boot.userStatus || "pending",
+  vimbisoId: _boot.vimbisoId ?? null,
+  name: _boot.name || "",
+  city: _boot.city || "Harare",
+  phone: _boot.phone || "",
+  profilePhoto: _boot.profilePhoto ?? null,
+  trustScore: _boot.trustScore ?? 0,
+  rating: _boot.rating ?? 0,
+  completedTrades: _boot.completedTrades ?? 0,
   toast: null,
   onboardStep: 0,
   suStep: 1,
@@ -156,12 +218,12 @@ export const useVimbiso = create<State & Actions>((set, get) => ({
   bidItems: [],
   selectedOffer: null,
   payMethod: "cash",
-  orderStep: 2,
+  orderStep: 0,
   reviewStars: 0,
   reviewNote: "",
   voiceOn: false,
   poolOpen: false,
-  poolJoined: 3,
+  poolJoined: 0,
   ussdStack: ["main"],
   counterMode: "accept",
   counterPrice: 16.5,
@@ -184,12 +246,12 @@ export const useVimbiso = create<State & Actions>((set, get) => ({
   enterApp: (role) => {
     const resolved = role === "both" ? "buyer" : role;
     const status = get().userStatus;
-    // Pending users see home but with limited actions; rejected stay out
     if (status === "rejected" || status === "suspended") {
       set({ toast: { id: Date.now(), message: "Account not approved yet" } });
       return;
     }
     set({ role: resolved, screen: homeFor(resolved) });
+    saveSession({ ...get(), role: resolved });
   },
   setLang: (lang) => set({ lang }),
   toggleLite: () => set({ lite: !get().lite }),
@@ -200,7 +262,40 @@ export const useVimbiso = create<State & Actions>((set, get) => ({
       if (get().toast?.id === id) set({ toast: null });
     }, 2200);
   },
-  set: (partial) => set(partial),
+  set: (partial) => {
+    set(partial);
+    const g = get();
+    if (
+      partial.userId !== undefined ||
+      partial.userStatus !== undefined ||
+      partial.vimbisoId !== undefined ||
+      partial.name !== undefined ||
+      partial.phone !== undefined ||
+      partial.city !== undefined ||
+      partial.profilePhoto !== undefined ||
+      partial.trustScore !== undefined ||
+      partial.rating !== undefined ||
+      partial.completedTrades !== undefined ||
+      partial.role !== undefined
+    ) {
+      saveSession(g);
+    }
+  },
+  signOut: () => {
+    localStorage.removeItem(SESSION_KEY);
+    set({
+      userId: null,
+      userStatus: "pending",
+      vimbisoId: null,
+      name: "",
+      phone: "",
+      profilePhoto: null,
+      trustScore: 0,
+      rating: 0,
+      completedTrades: 0,
+      screen: "welcome",
+    });
+  },
 }));
 
 

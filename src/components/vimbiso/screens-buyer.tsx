@@ -111,7 +111,27 @@ export function HomeScreen() {
             />
             <button
               type="button"
-              onClick={() => s.set({ voiceOn: true })}
+              onClick={async () => {
+                s.set({ voiceOn: true });
+                try {
+                  const { canListen, listenOnce, speak } = await import("@/lib/vimbiso/voice");
+                  if (!canListen()) {
+                    s.toastMsg("Voice not supported on this device — type your need instead");
+                    return;
+                  }
+                  s.toastMsg("Listening…");
+                  const text = await listenOnce("en-US");
+                  if (text) {
+                    s.set({ search: text, bidItem: text });
+                    s.toastMsg(`Heard: ${text}`);
+                    speak(`You need ${text}`);
+                  }
+                } catch (e) {
+                  s.toastMsg(e instanceof Error ? e.message : "Voice failed");
+                } finally {
+                  s.set({ voiceOn: false });
+                }
+              }}
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-teal to-teal-2 text-white shadow-[0_6px_16px_rgb(15_118_110_/_0.35)]"
               aria-label="Search by voice"
             >
@@ -169,9 +189,9 @@ export function HomeScreen() {
       <div className="px-4 pb-24">
         <div className="flex overflow-hidden rounded-md bg-navy text-white shadow-[var(--shadow-card)]">
           {[
-            ["47", t.online],
-            ["312", t.matched],
-            ["4.8", t.rating],
+            ["—", t.online],
+            ["—", t.matched],
+            [s.rating ? s.rating.toFixed(1) : "—", t.rating],
           ].map(([v, k], i) => (
             <div key={k} className="relative flex-1 px-1.5 py-3 text-center">
               {i > 0 ? <i className="absolute top-[18%] left-0 h-[64%] w-px bg-white/16" /> : null}
@@ -899,7 +919,7 @@ export function OffersScreen() {
                       <b className="text-ok">+10</b>
                     </div>
                     <div className="flex justify-between">
-                      <span>186 completed trades</span>
+                      <span>{s.completedTrades || 0} completed trades</span>
                       <b className="text-ok">clean</b>
                     </div>
                     <div className="flex justify-between">
@@ -1038,13 +1058,13 @@ export function StatusScreen() {
         <Card>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Avatar src={PORTRAITS.john} alt="Trader" verified />
+              <Avatar src={s.profilePhoto || PORTRAITS.john} alt="Trader" verified />
               <div>
                 <div className="font-extrabold text-navy">Trader</div>
                 <div className="text-xs text-mut">Ready in ~30 min</div>
               </div>
             </div>
-            <Badge tone="gold">Trust 94</Badge>
+            <Badge tone="gold">Trust {s.trustScore || 0}</Badge>
           </div>
           <div className="my-3 h-px bg-line" />
           <div className="flex justify-between text-sm">
@@ -1091,7 +1111,6 @@ export function StatusScreen() {
             s.toastMsg("Order updated");
           }}
         >
-          Simulate next update
         </Btn>
         <Btn className="mt-2" onClick={() => s.go("review")}>
           Mark received & review
@@ -1114,9 +1133,9 @@ export function ReviewScreen() {
         title="Rate trade"
       />
       <Pad className="pt-6 text-center">
-        <Avatar src={PORTRAITS.john} alt="Trader" size="xl" />
+        <Avatar src={s.profilePhoto || PORTRAITS.john} alt="Trader" size="xl" />
         <h1 className="font-display mt-3.5 text-[26px] font-extrabold text-navy">How was your trade?</h1>
-        <p className="text-mut">Trader · VMB-004821</p>
+        <p className="text-mut">Trader · {s.vimbisoId || "Network"}</p>
         <div className="my-5 flex justify-center gap-1.5">
           {[1, 2, 3, 4, 5].map((i) => (
             <button

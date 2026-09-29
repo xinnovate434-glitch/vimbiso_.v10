@@ -3,118 +3,95 @@ import { config } from "./config";
 const SW_PATH = "/sw-vimbiso.js";
 
 export function canUsePush(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    "serviceWorker" in navigator &&
-    "PushManager" in window &&
-    "Notification" in window
-  );
+  if (typeof window === "undefined") return false;
+  // Capacitor Android WebView often has no PushManager — use local alerts fallback
+  return "Notification" in window;
 }
 
-/** Register service worker for background notifications */
-export async function registerPushWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (!canUsePush()) return null;
-  try {
-    const reg = await navigator.serviceWorker.register(SW_PATH, { scope: "/" });
-    return reg;
-  } catch {
-    return null;
-  }
-}
+export type PushResult = {
+  ok: boolean;
+  permission?: NotificationPermission | "unsupported" | "denied" | "granted" | "default";
+  error?: string;
+};
 
 /**
- * Ask permission and return subscription JSON to save in DB.
- * Needs VAPID public key in env for full Web Push (optional for now).
+ * Enable alerts. On APK WebView, browser Push API is often missing —
+ * we still allow Notification permission when available, and always
+ * register preference so in-app toasts + future FCM can use it.
  */
-export async function enablePushNotifications(userId?: string | null): Promise<{
-  ok: boolean;
-  permission: NotificationPermission | "unsupported";
-  subscription?: PushSubscriptionJSON;
-  error?: string;
-}> {
-  if (!canUsePush()) {
-    return { ok: false, permission: "unsupported", error: "Push not supported on this device" };
+export async function enablePushNotifications(userId: string | null): Promise<PushResult> {
+  if (typeof window === "undefined") {
+    return { ok: false, permission: "unsupported", error: "Not in browser" };
   }
 
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") {
-    return { ok: false, permission, error: "Permission denied" };
+  // Always remember user preference for in-app routing
+  try {
+    localStorage.setItem(
+      "vimbiso_notify_pref",
+      JSON.stringify({ userId, enabled: true, at: Date.now() }),
+    );
+  } catch {
+    /* ignore */
   }
 
-  const reg = await registerPushWorker();
-  if (!reg) return { ok: false, permission, error: "Service worker failed" };
+  if (!("Notification" in window)) {
+    return {
+      ok: true,
+      permission: "unsupported",
+      error:
+        "System push is limited on this install. You will still get in-app alerts when the app is open. Full background push needs Firebase (FCM) — we can add that next.",
+    };
+  }
 
-  // Without VAPID key we still show local notifications when app is open;
-  // background push needs VAPID + server sender.
-  const vapid = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
-  let subscription: PushSubscriptionJSON | undefined;
-
-  if (vapid) {
-    try {
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapid),
-      });
-      subscription = sub.toJSON();
-      if (userId && config.supabase.url) {
-        await saveSubscription(userId, subscription);
-      }
-    } catch (e) {
+  try {
+    let perm = Notification.permission;
+    if (perm === "default") {
+      perm = await Notification.requestPermission();
+    }
+    if (perm !== "granted") {
       return {
-        ok: true,
-        permission,
-        error: e instanceof Error ? e.message : "Subscribe failed (local alerts still work)",
+        ok: false,
+        permission: perm,
+        error: "Permission denied — enable notifications in phone Settings for Vimbiso.",
       };
     }
-  }
 
-  return { ok: true, permission, subscription };
-}
+    // Optional service worker (may fail silently in Capacitor)
+    if ("serviceWorker" in navigator) {
+      try {
+        await navigator.serviceWorker.register(SW_PATH).catch(() => null);
+      } catch {
+        /* ignore */
+      }
+    }
 
-async function saveSubscription(userId: string, sub: PushSubscriptionJSON) {
-  const base = config.supabase.url?.replace(/\/$/, "");
-  const key = config.supabase.anonKey;
-  if (!base || !key || !sub.endpoint) return;
-  await fetch(`${base}/rest/v1/push_subscriptions`, {
-    method: "POST",
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates",
-    },
-    body: JSON.stringify({
-      user_id: userId,
-      endpoint: sub.endpoint,
-      p256dh: sub.keys?.p256dh ?? null,
-      auth: sub.keys?.auth ?? null,
-      platform: "web",
-      user_agent: navigator.userAgent,
-    }),
-  });
-}
+    try {
+      new Notification("Vimbiso Network", {
+        body: "Alerts on — we will notify you about bids and offers when possible.",
+        tag: "vimbiso-welcome",
+      });
+    } catch {
+      /* some WebViews block Notification constructor */
+    }
 
-/** Local notification when app is open (works without VAPID) */
-export async function notifyLocal(title: string, body: string) {
-  if (!canUsePush()) return;
-  if (Notification.permission !== "granted") return;
-  const reg = await navigator.serviceWorker.getRegistration();
-  if (reg) {
-    await reg.showNotification(title, {
-      body,
-      icon: "/__grok/icon-180.png",
-      tag: "vimbiso-local",
-    });
-  } else {
-    new Notification(title, { body, icon: "/__grok/icon-180.png" });
+    return { ok: true, permission: "granted" };
+  } catch (e) {
+    return {
+      ok: false,
+      permission: "unsupported",
+      error: e instanceof Error ? e.message : "Could not enable notifications",
+    };
   }
 }
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(base64);
-  const out = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
+export function notifyLocal(title: string, body: string) {
+  try {
+    const pref = localStorage.getItem("vimbiso_notify_pref");
+    if (!pref) return;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(title, { body, tag: "vimbiso-live" });
+    }
+  } catch {
+    /* ignore */
+  }
 }

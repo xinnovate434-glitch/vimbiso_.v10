@@ -58,10 +58,10 @@ export function TradeScreen() {
         </button>
         <div className="mt-3.5 grid grid-cols-2 gap-3">
           {[
-            ["94", "Trust Score"],
-            ["4.8", "Rating · 126 reviews"],
-            ["186", "Completed trades"],
-            [s.online ? "1" : "0", "Live requests"],
+            [String(s.trustScore || 0), "Trust Score"],
+            [s.rating ? `${s.rating.toFixed(1)} rating` : "No ratings yet", "From your trades"],
+            [String(s.completedTrades || 0), "Completed trades"],
+            [s.online ? "Live" : "0", "Requests"],
           ].map(([v, k]) => (
             <Card key={k}>
               <div className="font-display text-[26px] leading-none font-extrabold text-navy">{v}</div>
@@ -72,11 +72,11 @@ export function TradeScreen() {
         <Card className="mt-3.5 border-[1.5px] border-teal/30 bg-gradient-to-br from-teal/6 to-white" onClick={() => s.go("incoming")}>
           <div className="flex items-center justify-between">
             <div>
-              <Badge tone="live">new</Badge>
-              <div className="mt-1.5 font-extrabold text-navy">20kg tomatoes · Premium · Chitungwiza</div>
-              <div className="text-xs text-mut">Buyer bid: $15.00 · 2.1 km away</div>
+              <Badge tone="live">network</Badge>
+              <div className="mt-1.5 font-extrabold text-navy">Open buyer requests</div>
+              <div className="text-xs text-mut">Tap to see live bids from the network — no demo requests</div>
             </div>
-            <span className="rounded-sm bg-teal px-3.5 py-2 text-[13px] font-extrabold text-white">Offer</span>
+            <span className="rounded-sm bg-teal px-3.5 py-2 text-[13px] font-extrabold text-white">View</span>
           </div>
         </Card>
       </Pad>
@@ -642,7 +642,7 @@ export function ProfileScreen() {
           }
         />
         <img
-          src={PORTRAITS.tendai}
+          src={s.profilePhoto || PORTRAITS.tendai}
           alt={s.name}
           className="mx-auto h-[84px] w-[84px] rounded-3xl border-4 border-white object-cover"
         />
@@ -652,26 +652,26 @@ export function ProfileScreen() {
         </p>
         <div className="mt-2 flex justify-center gap-1.5">
           <Badge tone="teal">Verified</Badge>
-          <Badge tone="gold">Trust 94</Badge>
-          <Badge>100-trade badge</Badge>
+          <Badge tone="gold">Trust {s.trustScore || 0}</Badge>
+          <Badge>{s.completedTrades >= 100 ? "100-trade badge" : `${s.completedTrades} trades`}</Badge>
         </div>
         <div className="vn-idcard mt-4 text-left">
           <div className="text-[11px] font-extrabold tracking-[0.14em] text-gold-2">VIMBISO ID</div>
-          <div className="font-mono text-[28px] font-extrabold">VMB-004821</div>
+          <div className="font-mono text-[28px] font-extrabold">{s.vimbisoId || "Pending ID"}</div>
           <div className="mt-2 flex items-center justify-between">
             <div>
-              <div className="font-extrabold">186 transactions</div>
-              <div className="text-xs text-white/70">4.8 avg rating</div>
+              <div className="font-extrabold">{s.completedTrades} transactions</div>
+              <div className="text-xs text-white/70">{s.rating ? s.rating.toFixed(1) : "—"} avg rating</div>
             </div>
             <img src="/images/qr-id.png" alt="ID QR" className="h-16 w-16 rounded-xs bg-white p-1" />
           </div>
         </div>
         <div className="mt-3.5 grid grid-cols-2 gap-3 text-left">
           {[
-            ["94", "Trust Score"],
-            ["4.8", "Rating"],
-            ["186", "Completed"],
-            ["Online", "Status"],
+            [String(s.trustScore || 0), "Trust Score"],
+            [s.rating ? s.rating.toFixed(1) : "—", "Rating"],
+            [String(s.completedTrades || 0), "Completed"],
+            [s.userStatus === "approved" ? "Verified" : "Pending", "Status"],
           ].map(([v, k]) => (
             <Card key={k}>
               <div className="font-display text-[26px] leading-none font-extrabold text-navy">{v}</div>
@@ -679,6 +679,29 @@ export function ProfileScreen() {
             </Card>
           ))}
         </div>
+        <label className="mt-3.5 flex cursor-pointer items-center justify-center rounded-sm border-[1.5px] border-line bg-white px-4 py-3 text-sm font-bold text-navy">
+          Change profile photo
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (f.size > 1_500_000) {
+                s.toastMsg("Photo too large — use under 1.5MB");
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                const data = String(reader.result || "");
+                s.set({ profilePhoto: data });
+                s.toastMsg("Profile photo updated");
+              };
+              reader.readAsDataURL(f);
+            }}
+          />
+        </label>
         <Btn
           variant="teal"
           className="mt-3.5"

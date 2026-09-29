@@ -255,6 +255,13 @@ export function SignInScreen() {
       if (user) {
         set({
           userId: user.id,
+          trustScore: user.trust_score ?? 0,
+          rating: user.rating ?? 0,
+          completedTrades: user.completed_trades ?? 0,
+          vimbisoId: user.vimbiso_id ?? null,
+          userStatus: user.status ?? "pending",
+          name: user.name || s.name,
+          city: user.city || s.city,
           userStatus: user.status,
           vimbisoId: user.vimbiso_id,
           name: user.name,
@@ -336,6 +343,13 @@ export function OtpScreen() {
       if (user) {
         s.set({
           userId: user.id,
+          trustScore: user.trust_score ?? 0,
+          rating: user.rating ?? 0,
+          completedTrades: user.completed_trades ?? 0,
+          vimbisoId: user.vimbiso_id ?? null,
+          userStatus: user.status ?? "pending",
+          name: user.name || s.name,
+          city: user.city || s.city,
           userStatus: user.status,
           vimbisoId: user.vimbiso_id,
           name: user.name || s.name,
@@ -556,6 +570,13 @@ export function SignupScreen() {
                 }
                 s.set({
                   userId: user.id,
+          trustScore: user.trust_score ?? 0,
+          rating: user.rating ?? 0,
+          completedTrades: user.completed_trades ?? 0,
+          vimbisoId: user.vimbiso_id ?? null,
+          userStatus: user.status ?? "pending",
+          name: user.name || s.name,
+          city: user.city || s.city,
                   userStatus: user.status,
                   vimbisoId: user.vimbiso_id,
                   name: user.name,
