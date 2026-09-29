@@ -7,17 +7,11 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-<<<<<<< HEAD
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-=======
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
->>>>>>> 48080200ab0c48c07b38fd69b6f66b2528490893
         with:
           node-version: "22"
 
@@ -26,32 +20,24 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
-<<<<<<< HEAD
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
         run: |
           mkdir -p dist
           cp -r mobile-www/* dist/
           python3 -c "
-          import os,json,pathlib
-          cfg={
-            'supabaseUrl':os.environ.get('VITE_SUPABASE_URL') or '',
-            'supabaseAnon':os.environ.get('VITE_SUPABASE_ANON_KEY') or '',
-            'geminiKey':os.environ.get('VITE_GEMINI_API_KEY') or '',
-            'weatherKey':os.environ.get('VITE_OPENWEATHER_API_KEY') or '',
+          import os, json, pathlib
+          cfg = {
+            'supabaseUrl': os.environ.get('VITE_SUPABASE_URL') or '',
+            'supabaseAnon': os.environ.get('VITE_SUPABASE_ANON_KEY') or '',
+            'geminiKey': os.environ.get('VITE_GEMINI_API_KEY') or '',
+            'weatherKey': os.environ.get('VITE_OPENWEATHER_API_KEY') or '',
           }
-          pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG='+json.dumps(cfg)+';')
-          print('supabase',bool(cfg['supabaseUrl']),'gemini',bool(cfg['geminiKey']))
+          pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG = ' + json.dumps(cfg) + ';')
+          print('supabase', bool(cfg['supabaseUrl']), 'gemini', bool(cfg['geminiKey']))
           "
-          test -f dist/index.html && test -f dist/app.js
-          ls -la dist
-=======
-        run: |
-          mkdir -p dist
-          cp -r mobile-www/* dist/
-          python3 -c "import os,json,pathlib; cfg={'supabaseUrl':os.environ.get('VITE_SUPABASE_URL') or '','supabaseAnon':os.environ.get('VITE_SUPABASE_ANON_KEY') or '','geminiKey':os.environ.get('VITE_GEMINI_API_KEY') or ''}; pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG = '+json.dumps(cfg)+';'); print('ok')"
           test -f dist/index.html
-          ls dist
->>>>>>> 48080200ab0c48c07b38fd69b6f66b2528490893
+          test -f dist/app.js
+          ls -la dist
 
       - name: Capacitor
         run: |
@@ -61,32 +47,20 @@ jobs:
           npx cap add android
           npx cap sync android
 
-<<<<<<< HEAD
-      - uses: actions/setup-java@v4
-=======
       - name: Java
         uses: actions/setup-java@v4
->>>>>>> 48080200ab0c48c07b38fd69b6f66b2528490893
         with:
           distribution: temurin
           java-version: "17"
 
-<<<<<<< HEAD
-      - name: APK
-        working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
-
-      - uses: actions/upload-artifact@v4
-=======
       - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload
+      - name: Upload APK
         uses: actions/upload-artifact@v4
->>>>>>> 48080200ab0c48c07b38fd69b6f66b2528490893
         with:
           name: vimbiso-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
