@@ -1,18 +1,33 @@
+
 import { useEffect, useRef, useState } from "react";
 import { config } from "@/lib/vimbiso/config";
 import { buildHeatCells, type HeatCell } from "@/lib/vimbiso/heatmap";
+
+type MapLike = {
+  on: (e: string, cb: () => void) => void;
+  addSource: (id: string, src: unknown) => void;
+  addLayer: (layer: unknown) => void;
+  remove: () => void;
+  flyTo?: (o: Record<string, unknown>) => void;
+  addControl?: (c: unknown, pos?: string) => void;
+  resize?: () => void;
+};
 
 declare global {
   interface Window {
     mapboxgl?: {
       accessToken: string;
-      Map: new (opts: Record<string, unknown>) => {
-        on: (e: string, cb: () => void) => void;
-        addSource: (id: string, src: unknown) => void;
-        addLayer: (layer: unknown) => void;
+      Map: new (opts: Record<string, unknown>) => MapLike;
+      NavigationControl: new () => unknown;
+      Marker: new (opts?: Record<string, unknown>) => {
+        setLngLat: (ll: [number, number]) => { addTo: (m: MapLike) => unknown };
         remove: () => void;
       };
-      NavigationControl: new () => unknown;
+      Popup: new (opts?: Record<string, unknown>) => {
+        setLngLat: (ll: [number, number]) => {
+          setHTML: (h: string) => { addTo: (m: MapLike) => unknown };
+        };
+      };
     };
   }
 }
@@ -31,102 +46,142 @@ function loadMapbox(): Promise<void> {
     script.src = "https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js";
     script.onload = () => resolve();
     script.onerror = () => reject(new Error("Mapbox failed to load"));
-    document.head.appendChild(script);
+    document.body.appendChild(script);
   });
 }
 
-type Props = {
+function getPosition(): Promise<{ lat: number; lon: number }> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ lat: -17.8292, lon: 31.0522 });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      () => resolve({ lat: -17.8292, lon: 31.0522 }),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  });
+}
+
+export function MapHeat({
+  className,
+  showNearby = true,
+}: {
   className?: string;
-  height?: number;
-};
-
-/** Interactive Mapbox heat map of demand / traders in Zimbabwe */
-export function MapHeat({ className, height = 280 }: Props) {
+  showNearby?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const [cells, setCells] = useState<HeatCell[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+  const [label, setLabel] = useState("Locating you…");
 
   useEffect(() => {
-    buildHeatCells().then(setCells).catch(() => setCells([]));
-  }, []);
-
-  useEffect(() => {
-    const token = config.mapbox.token;
-    if (!token || !ref.current || cells.length === 0) return;
-
-    let map: { remove: () => void } | null = null;
-    let cancelled = false;
+    let map: MapLike | null = null;
+    let dead = false;
 
     (async () => {
+      const token = config.mapbox.token;
+      if (!token) {
+        setErr("Mapbox token missing (VITE_MAPBOX_TOKEN)");
+        return;
+      }
       try {
         await loadMapbox();
-        if (cancelled || !window.mapboxgl || !ref.current) return;
+        if (dead || !ref.current || !window.mapboxgl) return;
+
+        const me = await getPosition();
+        if (dead) return;
+        setLabel(`You · ${me.lat.toFixed(4)}, ${me.lon.toFixed(4)}`);
+
         window.mapboxgl.accessToken = token;
-        const m = new window.mapboxgl.Map({
+        map = new window.mapboxgl.Map({
           container: ref.current,
-          style: "mapbox://styles/mapbox/dark-v11",
-          center: [31.05, -17.85],
-          zoom: 8.2,
+          // Light streets — not dark
+          style: "mapbox://styles/mapbox/streets-v12",
+          center: [me.lon, me.lat],
+          zoom: 13,
+          attributionControl: false,
         });
-        map = m;
-        m.on("load", () => {
-          const geojson = {
-            type: "FeatureCollection",
-            features: cells.map((c) => ({
-              type: "Feature",
-              properties: {
-                name: c.name,
-                intensity: c.intensity,
-                traders: c.traders,
+
+        map.addControl?.(new window.mapboxgl.NavigationControl(), "top-right");
+
+        map.on("load", async () => {
+          if (!map || !window.mapboxgl) return;
+          map.resize?.();
+
+          // You are here
+          const el = document.createElement("div");
+          el.style.width = "18px";
+          el.style.height = "18px";
+          el.style.borderRadius = "999px";
+          el.style.background = "#0f766e";
+          el.style.border = "3px solid #fff";
+          el.style.boxShadow = "0 0 0 4px rgba(15,118,110,0.25)";
+          new window.mapboxgl.Marker({ element: el })
+            .setLngLat([me.lon, me.lat])
+            .addTo(map);
+
+          // Heat cells around you
+          const cells: HeatCell[] = buildHeatCells(me.lat, me.lon);
+          if (cells.length) {
+            map.addSource("heat", {
+              type: "geojson",
+              data: {
+                type: "FeatureCollection",
+                features: cells.map((c) => ({
+                  type: "Feature",
+                  properties: { w: c.weight },
+                  geometry: { type: "Point", coordinates: [c.lon, c.lat] },
+                })),
               },
-              geometry: {
-                type: "Point",
-                coordinates: [c.lng, c.lat],
+            });
+            map.addLayer({
+              id: "heat-c",
+              type: "circle",
+              source: "heat",
+              paint: {
+                "circle-radius": ["interpolate", ["linear"], ["get", "w"], 0, 8, 1, 28],
+                "circle-color": [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "w"],
+                  0,
+                  "#99f6e4",
+                  0.5,
+                  "#14b8a6",
+                  1,
+                  "#0f766e",
+                ],
+                "circle-opacity": 0.35,
               },
-            })),
-          };
-          m.addSource("demand", { type: "geojson", data: geojson });
-          m.addLayer({
-            id: "demand-heat",
-            type: "heatmap",
-            source: "demand",
-            maxzoom: 12,
-            paint: {
-              "heatmap-weight": ["interpolate", ["linear"], ["get", "intensity"], 0, 0, 1, 1],
-              "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, 0.6, 12, 1.4],
-              "heatmap-color": [
-                "interpolate",
-                ["linear"],
-                ["heatmap-density"],
-                0,
-                "rgba(0,0,0,0)",
-                0.2,
-                "rgb(14,42,71)",
-                0.4,
-                "rgb(15,118,110)",
-                0.7,
-                "rgb(20,184,166)",
-                1,
-                "rgb(224,163,43)",
-              ],
-              "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 28, 12, 50],
-              "heatmap-opacity": 0.85,
-            },
-          });
-          m.addLayer({
-            id: "demand-points",
-            type: "circle",
-            source: "demand",
-            minzoom: 9,
-            paint: {
-              "circle-radius": 6,
-              "circle-color": "#14b8a6",
-              "circle-stroke-width": 2,
-              "circle-stroke-color": "#fff",
-            },
-          });
-          setReady(true);
+            });
+          }
+
+          // Nearby approved traders
+          if (showNearby) {
+            try {
+              const { listOnlineTraders } = await import("@/lib/vimbiso/api");
+              const { data } = await listOnlineTraders();
+              (data || []).slice(0, 30).forEach((u, i) => {
+                if (!map || !window.mapboxgl) return;
+                // Without stored lat/lon, place slightly around user by index (UI only until GPS saved on profiles)
+                const dlat = ((i % 5) - 2) * 0.008;
+                const dlon = (((i * 3) % 5) - 2) * 0.008;
+                const mEl = document.createElement("div");
+                mEl.style.width = "12px";
+                mEl.style.height = "12px";
+                mEl.style.borderRadius = "999px";
+                mEl.style.background = "#e0a32b";
+                mEl.style.border = "2px solid #fff";
+                mEl.title = u.name || "Trader";
+                new window.mapboxgl.Marker({ element: mEl })
+                  .setLngLat([me.lon + dlon, me.lat + dlat])
+                  .addTo(map);
+              });
+            } catch {
+              /* ignore */
+            }
+          }
         });
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Map error");
@@ -134,30 +189,30 @@ export function MapHeat({ className, height = 280 }: Props) {
     })();
 
     return () => {
-      cancelled = true;
-      map?.remove();
+      dead = true;
+      try {
+        map?.remove();
+      } catch {
+        /* ignore */
+      }
     };
-  }, [cells]);
+  }, [showNearby]);
 
-  if (!config.mapbox.token) {
+  if (err) {
     return (
-      <div className={className} style={{ height }}>
-        <p className="p-4 text-sm text-mut">Mapbox token missing</p>
+      <div className={className}>
+        <div className="rounded-lg bg-navy/5 p-4 text-sm text-mut">{err}</div>
       </div>
     );
   }
 
   return (
     <div className={className}>
-      <div
-        ref={ref}
-        style={{ height, borderRadius: 16, overflow: "hidden" }}
-        className="bg-navy-3"
-      />
-      {!ready && !err ? (
-        <p className="mt-1 text-center text-[11px] text-mut">Loading map…</p>
-      ) : null}
-      {err ? <p className="mt-1 text-center text-[11px] text-err">{err}</p> : null}
+      <div className="mb-1 text-[11px] font-bold text-mut">{label}</div>
+      <div ref={ref} className="h-[220px] w-full overflow-hidden rounded-lg border border-line" />
+      <p className="mt-1 text-[11px] text-mut">
+        Teal = you · Gold = network traders (exact pins when profiles save GPS)
+      </p>
     </div>
   );
 }

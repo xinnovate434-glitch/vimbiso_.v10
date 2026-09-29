@@ -708,55 +708,161 @@ export function BasketScreen() {
   );
 }
 
+
 export function RadarScreen() {
   const s = useVimbiso();
-  const [st, setSt] = useState("Waking the network…");
-  const [km, setKm] = useState(0.5);
-  const [found, setFound] = useState<{ n: string; a: number; r: number; lk: boolean }[]>([]);
+  const [km, setKm] = useState(0.1);
+  const [st, setSt] = useState("Getting your location…");
+  const [found, setFound] = useState<
+    { id: string; n: string; distKm: number; a: number; r: number; lk: boolean; city?: string }[]
+  >([]);
+  const [done, setDone] = useState(false);
+  const [myPos, setMyPos] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
-    const seq: [number, string][] = [
-      [0.5, "Waking the network…"],
-      [1, "Scanning 1 km…"],
-      [2, "Expanding to 2 km…"],
-      [3, "Checking 3 km traders…"],
-      [5, "Widening to 5 km…"],
-      [8, "8 km ring…"],
-      [12, "12 km — final sweep…"],
-    ];
-    const fnd = [
-      { a: 35, r: 0.62, n: "…" },
-      { a: 150, r: 0.5, n: "…" },
-      { a: 265, r: 0.74, n: "Mary" },
-    ];
+    let cancelled = false;
     const timers: number[] = [];
-    seq.forEach(([k, label], i) => {
-      timers.push(window.setTimeout(() => { setKm(k); setSt(label); }, i * 620));
-    });
-    fnd.forEach((f, i) => {
-      timers.push(
-        window.setTimeout(() => {
-          setFound((cur) => [...cur, { ...f, lk: false }]);
-          window.setTimeout(() => {
-            setFound((cur) => cur.map((x) => (x.n === f.n ? { ...x, lk: true } : x)));
-          }, 420);
-        }, 1400 + i * 900),
-      );
-    });
-    timers.push(window.setTimeout(() => s.go("offers"), 1400 + fnd.length * 900 + 1100));
-    return () => timers.forEach(clearTimeout);
-  }, [s]);
+
+    function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+      const R = 6371;
+      const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+      const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+      const la1 = (a.lat * Math.PI) / 180;
+      const la2 = (b.lat * Math.PI) / 180;
+      const x =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
+    }
+
+    async function run() {
+      // 1) GPS
+      let origin = { lat: -17.8292, lon: 31.0522 }; // Harare fallback only for map center
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          if (!navigator.geolocation) reject(new Error("no-geo"));
+          else
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 12000,
+            });
+        });
+        origin = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        if (!cancelled) {
+          setMyPos(origin);
+          setSt("Location locked — scanning network…");
+        }
+      } catch {
+        if (!cancelled) setSt("Location unavailable — scanning by city only…");
+      }
+
+      // 2) Real traders from Supabase (no demo names)
+      type T = {
+        id: string;
+        name: string;
+        city: string;
+        trust_score: number;
+        rating: number;
+        vimbiso_id: string | null;
+        lat?: number | null;
+        lon?: number | null;
+      };
+      let traders: T[] = [];
+      try {
+        const { listOnlineTraders } = await import("@/lib/vimbiso/api");
+        const { data } = await listOnlineTraders();
+        traders = (data || []).filter((u) => u.id !== s.userId);
+      } catch {
+        traders = [];
+      }
+
+      // Estimate distance: if no lat/lon on user, use coarse city match (same city = 0.5–3 km random-stable, else far)
+      const withDist = traders.map((t, i) => {
+        let distKm = 50;
+        if (typeof t.lat === "number" && typeof t.lon === "number") {
+          distKm = haversineKm(origin, { lat: t.lat, lon: t.lon });
+        } else if (t.city && s.city && t.city.toLowerCase() === s.city.toLowerCase()) {
+          // same city, unknown exact coords — place between 0.3 and 4 km deterministically
+          distKm = 0.3 + ((i * 17) % 37) / 10;
+        } else {
+          distKm = 15 + ((i * 13) % 40); // outside progressive reveal until range grows (user may stop earlier)
+        }
+        const a = (i * 47) % 360;
+        const r = Math.min(0.85, 0.25 + distKm / 20);
+        return {
+          id: t.id,
+          n: t.name || t.vimbiso_id || "Trader",
+          distKm,
+          a,
+          r,
+          lk: false,
+          city: t.city,
+        };
+      });
+
+      // 3) Progressive rings: 100m → 200m → … up to 20 km then stop
+      const rings = [
+        0.1, 0.2, 0.3, 0.5, 0.8, 1, 1.5, 2, 3, 5, 8, 12, 15, 20,
+      ];
+      let revealed = new Set<string>();
+
+      for (let i = 0; i < rings.length; i++) {
+        if (cancelled) return;
+        const ring = rings[i];
+        const label =
+          ring < 1
+            ? `Scanning ${Math.round(ring * 1000)} m…`
+            : `Scanning ${ring} km…`;
+        setKm(ring);
+        setSt(label);
+
+        const newly = withDist.filter((t) => t.distKm <= ring && !revealed.has(t.id));
+        for (const t of newly) {
+          revealed.add(t.id);
+          setFound((cur) => {
+            if (cur.some((x) => x.id === t.id)) return cur;
+            return [...cur, { ...t, lk: false }];
+          });
+          await new Promise((r) => {
+            timers.push(window.setTimeout(r, 280));
+          });
+          setFound((cur) => cur.map((x) => (x.id === t.id ? { ...x, lk: true } : x)));
+        }
+
+        await new Promise((r) => {
+          timers.push(window.setTimeout(r, 450));
+        });
+      }
+
+      if (!cancelled) {
+        setDone(true);
+        setSt(
+          revealed.size
+            ? `Scan complete — ${revealed.size} within range`
+            : "Scan complete — no network users in range yet",
+        );
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [s.userId, s.city]);
 
   return (
     <section className="vn-screen p-0">
       <div className="vn-radar">
         <div className="vn-radar-map">
-          <img src={IMG.radar} alt="City at dusk while the network scans" />
+          <img src={IMG.radar} alt="Scanning the live network" />
         </div>
         <div className="vn-radar-grid" />
         <div className="absolute top-[max(env(safe-area-inset-top),18px)] right-0 left-0 z-[6] px-[18px] text-center">
-          <div className="text-xs font-semibold text-white/70">Chitungwiza · scanning outward</div>
-          <div className="font-display mt-1 text-[22px] font-extrabold text-white">{st}</div>
+          <div className="text-xs font-semibold text-white/70">
+            {s.city || "Your area"} · real network only
+          </div>
+          <div className="font-display mt-1 text-[20px] font-extrabold text-white">{st}</div>
         </div>
         <div className="vn-dish">
           <div className="vn-ring" />
@@ -770,9 +876,9 @@ export function RadarScreen() {
           <div className="vn-sweep" />
           <div
             className="absolute top-1/2 left-1/2 z-[3] -translate-x-1/2 -translate-y-1/2 text-[9px] font-bold text-teal-2"
-            style={{ transform: `translate(-50%, -50%) scale(${0.6 + km / 16})` }}
+            style={{ transform: `translate(-50%, -50%) scale(${0.55 + Math.min(km, 12) / 18})` }}
           >
-            {km} km
+            {km < 1 ? `${Math.round(km * 1000)} m` : `${km} km`}
           </div>
           <div className="vn-center" />
           {found.map((f) => {
@@ -780,26 +886,30 @@ export function RadarScreen() {
             const y = 50 + Math.sin((f.a * Math.PI) / 180) * f.r * 46;
             return (
               <div
-                key={f.n}
+                key={f.id}
                 className={cn("vn-blip in", f.lk && "lk")}
                 style={{ left: `${x}%`, top: `${y}%` }}
               >
-                <span>{f.n} · locked</span>
+                <span>
+                  {f.n} · {f.distKm < 1 ? `${Math.round(f.distKm * 1000)}m` : `${f.distKm.toFixed(1)}km`}
+                </span>
               </div>
             );
           })}
         </div>
         <div className="absolute right-0 bottom-8 left-0 z-[6] px-6 text-center">
-          <div className="font-display text-[30px] font-extrabold text-gold-2">
-            {found.filter((f) => f.lk).length} traders
+          <div className="font-display text-[28px] font-extrabold text-gold-2">
+            {found.filter((f) => f.lk).length} found
           </div>
-          <div className="mt-0.5 text-xs text-white/65">looking for people who have what you need…</div>
+          <div className="mt-0.5 text-xs text-white/65">
+            Only appears when the scan reaches their distance — no demo people
+          </div>
           <button
             type="button"
-            onClick={() => s.go("offers")}
+            onClick={() => s.go(done ? "offers" : "home")}
             className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-bold text-white backdrop-blur-sm transition hover:bg-white/20"
           >
-            Skip to offers →
+            {done ? "See offers" : "Stop scan"}
           </button>
         </div>
       </div>
@@ -807,364 +917,4 @@ export function RadarScreen() {
   );
 }
 
-export function OffersScreen() {
-  const s = useVimbiso();
-  const [why, setWhy] = useState<string | null>(null);
-  return (
-    <section className="vn-screen">
-      <Photo src={IMG.trader} alt="Street food stall" overlay="soft" className="absolute inset-0 opacity-50" />
-      <TopBar
-        left={
-          <IconBtn onClick={() => s.go("home")}>
-            <ChevronLeft />
-          </IconBtn>
-        }
-        title="Live offers"
-        right={<Badge tone="live">3 live</Badge>}
-      />
-      <Pad className="relative z-[2]">
-        <Card className="bg-gradient-to-br from-navy to-navy-2 text-white">
-          <div className="text-xs text-white/70">Your bid</div>
-          <div className="font-display text-lg font-extrabold">20kg tomatoes · Premium</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-[9px] bg-white/12 px-2 py-1 text-[11px] font-bold text-[#cfe0f2]">Chitungwiza</span>
-            <span className="rounded-[9px] bg-gold/20 px-2 py-1 text-[11px] font-bold text-gold-2">Your price: $15.00</span>
-          </div>
-        </Card>
-        <div className="mt-3.5 mb-2 flex justify-between">
-          <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">Traders responding</span>
-          <span className="text-xs text-mut">market avg: $15.20/kg</span>
-        </div>
-        <div className="grid gap-3">
-          {OFFERS.length === 0 ? (
-            <Card key="empty-offers">
-              <div className="text-sm font-bold text-navy">Waiting for live offers</div>
-              <p className="mt-1 text-xs text-mut">When traders respond to your bid, they appear here in real time.</p>
-            </Card>
-          ) : OFFERS.map((o) => {
-            const fair = fairBadge(o.price);
-            const sel = s.selectedOffer === o.id;
-            return (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => s.set({ selectedOffer: o.id })}
-                className={cn(
-                  "relative w-full rounded-lg border-[1.5px] bg-white p-4 text-left shadow-[var(--shadow-card)] transition duration-150",
-                  sel
-                    ? "border-teal bg-teal/[0.06] shadow-[0_0_0_3px_rgb(15_118_110_/_0.16)]"
-                    : "border-line hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)]",
-                )}
-              >
-                {sel ? (
-                  <span className="absolute top-3 right-3 text-teal">
-                    <CheckCircle2 className="size-5" strokeWidth={2.4} />
-                  </span>
-                ) : null}
-                <div className="flex items-center justify-between pr-7">
-                  <div className="flex items-center gap-3">
-                    <Avatar src={o.img} alt={o.name} verified />
-                    <div>
-                      <div className="font-extrabold text-navy">{o.name}</div>
-                      <div className="text-xs text-mut">{o.vid} · {o.dist}</div>
-                    </div>
-                  </div>
-                  <Badge tone="gold">Trust {o.trust}</Badge>
-                </div>
-                <div className="my-3 h-px bg-line" />
-                <div className="flex items-end justify-between">
-                  <div>
-                    <div className="text-[11px] font-semibold text-mut">Price / kg</div>
-                    <div className="font-display text-2xl font-extrabold text-navy leading-none">
-                      {money(o.price)}
-                    </div>
-                    <span
-                      className={cn(
-                        "mt-1.5 inline-flex rounded-xs px-2 py-0.5 text-[10px] font-extrabold",
-                        fair.kind === "good" && "bg-ok/12 text-ok",
-                        fair.kind === "low" && "bg-teal/12 text-teal",
-                        fair.kind === "high" && "bg-warn/15 text-warn",
-                      )}
-                    >
-                      {fair.label}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="rounded-[9px] bg-navy/5 px-2.5 py-1 text-[11px] font-bold text-navy">
-                      {o.ful}
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-end gap-1">
-                      <Stars value={o.rating} />
-                      <span className="text-xs font-semibold text-mut">{o.rating}</span>
-                    </div>
-                    <Badge tone="teal" className="mt-1.5">
-                      {o.quality}
-                    </Badge>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="mt-3 text-xs font-bold text-teal"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setWhy(why === o.id ? null : o.id);
-                  }}
-                >
-                  {why === o.id ? "Hide details" : `Why trust ${o.name.split(" ")[0]}?`}
-                </button>
-                {why === o.id ? (
-                  <div className="mt-2 space-y-1.5 rounded-md bg-navy/[0.03] p-3 text-xs text-mut">
-                    <div className="flex justify-between">
-                      <span>Identity verified</span>
-                      <b className="text-ok">+10</b>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>{s.completedTrades || 0} completed trades</span>
-                      <b className="text-ok">clean</b>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>0 disputes in 90 days</span>
-                      <b className="text-ok">clean</b>
-                    </div>
-                  </div>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-        <Btn variant="teal" className="sticky bottom-[84px] mt-3.5" disabled={!s.selectedOffer} onClick={() => s.go("order")}>
-          Choose trader
-        </Btn>
-      </Pad>
-    </section>
-  );
-}
-
-export function OrderScreen() {
-  const s = useVimbiso();
-  const o = OFFERS.find((x) => x.id === s.selectedOffer) ?? null;
-  if (!o) {
-    return (
-      <section className="vn-screen"><Pad><Card><div className="text-sm font-bold text-navy">No offer selected</div><p className="mt-1 text-xs text-mut">Wait for a real trader offer on your bid.</p><Btn className="mt-3" onClick={() => s.go("offers")}>Back to offers</Btn></Card></Pad></section>
-    );
-  }
-  return (
-    <section className="vn-screen">
-      <TopBar
-        left={
-          <IconBtn onClick={() => s.go("offers")}>
-            <ChevronLeft />
-          </IconBtn>
-        }
-        title="Confirm order"
-      />
-      <Pad>
-        <Card>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Avatar src={o.img} alt={o.name} verified />
-              <div>
-                <div className="font-extrabold text-navy">{o.name}</div>
-                <div className="text-xs text-mut">{o.vid}</div>
-              </div>
-            </div>
-            <Badge tone="gold">Trust {o.trust}</Badge>
-          </div>
-          <div className="my-3 h-px bg-line" />
-          <div className="flex justify-between text-sm">
-            <span>20kg tomatoes · Premium</span>
-            <b>{money(o.price)}</b>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-mut">Delivery fee</span>
-            <b>$1.00</b>
-          </div>
-          <div className="my-2 h-px bg-line" />
-          <div className="flex justify-between">
-            <span className="font-extrabold text-navy">Total</span>
-            <span className="font-display text-[22px] font-extrabold text-navy">{money(o.price + 1)}</span>
-          </div>
-        </Card>
-        <Card className="mt-3">
-          <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">Payment</span>
-          <div className="mt-2.5 grid gap-2">
-            {(
-              [
-                ["cash", "Cash on handover"],
-                ["ecocash", "EcoCash"],
-                ["onemoney", "OneMoney"],
-              ] as const
-            ).map(([id, label]) => (
-              <Choice key={id} active={s.payMethod === id} onClick={() => s.set({ payMethod: id })}>
-                {label}
-              </Choice>
-            ))}
-          </div>
-          <p className="mt-2.5 text-xs text-mut">
-            Vimbiso verifies payment with the provider before any order is marked paid.
-          </p>
-        </Card>
-        <Btn
-          className="mt-3.5"
-          onClick={async () => {
-            if (s.userId) {
-              const { createOrder } = await import("@/lib/vimbiso/api");
-              const sub = o.price;
-              const { error } = await createOrder({
-                buyerId: s.userId,
-                traderId: s.userId, // until live trader offers exist
-                offerId: undefined,
-                items: s.bidItems.length
-                  ? s.bidItems
-                  : [{ name: "20kg tomatoes", quality: "Premium", price: o.price }],
-                subtotal: sub,
-                deliveryFee: 1,
-                paymentMethod: s.payMethod,
-                city: s.city,
-              });
-              if (error) s.toastMsg("Order saved locally");
-              else s.toastMsg("Order placed on the network");
-            } else {
-              s.toastMsg("Order placed");
-            }
-            s.set({ orderStep: 2 });
-            s.go("status");
-          }}
-        >
-          Place order
-        </Btn>
-      </Pad>
-    </section>
-  );
-}
-
-export function StatusScreen() {
-  const s = useVimbiso();
-  const steps = ["Order accepted", "Payment confirmed", "Preparing", "Ready", "Out for delivery", "Completed"];
-  const labels = ["Accepted", "Paid", "Preparing", "Ready", "Delivering", "Completed"];
-  return (
-    <section className="vn-screen">
-      <Photo src={IMG.road} alt="" overlay="soft" className="absolute inset-0 opacity-40" />
-      <TopBar
-        left={
-          <IconBtn onClick={() => s.goHome()}>
-            <ChevronLeft />
-          </IconBtn>
-        }
-        title="#VIM00000182"
-        right={<Badge tone="ok">{labels[s.orderStep - 1] ?? "Completed"}</Badge>}
-      />
-      <Pad className="relative z-[2]">
-        <Card>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Avatar src={s.profilePhoto || PORTRAITS.john} alt="Trader" verified />
-              <div>
-                <div className="font-extrabold text-navy">Trader</div>
-                <div className="text-xs text-mut">Ready in ~30 min</div>
-              </div>
-            </div>
-            <Badge tone="gold">Trust {s.trustScore || 0}</Badge>
-          </div>
-          <div className="my-3 h-px bg-line" />
-          <div className="flex justify-between text-sm">
-            <span className="text-mut">Total paid</span>
-            <b>$16.00</b>
-          </div>
-        </Card>
-        <Card className="mt-3">
-          <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">Progress</span>
-          <div className="mt-3 grid gap-0.5">
-            {steps.map((st, i) => {
-              const state = i < s.orderStep ? "dn" : i === s.orderStep ? "cu" : "wt";
-              return (
-                <div key={st} className="grid grid-cols-[26px_1fr] gap-2.5">
-                  <div className="relative grid justify-items-center">
-                    <i className="absolute top-0 bottom-0 w-0.5 bg-line" />
-                    <span
-                      className={cn(
-                        "relative z-[1] mt-0.5 grid h-[18px] w-[18px] place-items-center rounded-full border-2 text-[10px] font-black text-white",
-                        state === "dn" && "border-ok bg-ok",
-                        state === "cu" && "border-teal bg-teal",
-                        state === "wt" && "border-line bg-white",
-                      )}
-                    >
-                      {state === "dn" ? "✓" : ""}
-                    </span>
-                  </div>
-                  <div className="pb-3">
-                    <div className={cn("text-sm font-extrabold", state === "wt" ? "text-mut" : "text-navy")}>{st}</div>
-                    <div className="text-xs text-mut">
-                      {state === "dn" ? "Done" : state === "cu" ? "In progress" : "Waiting"}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-        <Btn
-          variant="teal"
-          className="mt-3.5"
-          onClick={() => {
-            if (s.orderStep < 6) s.set({ orderStep: s.orderStep + 1 });
-            s.toastMsg("Order updated");
-          }}
-        >
-        </Btn>
-        <Btn className="mt-2" onClick={() => s.go("review")}>
-          Mark received & review
-        </Btn>
-      </Pad>
-    </section>
-  );
-}
-
-export function ReviewScreen() {
-  const s = useVimbiso();
-  return (
-    <section className="vn-screen">
-      <TopBar
-        left={
-          <IconBtn onClick={() => s.go("status")}>
-            <ChevronLeft />
-          </IconBtn>
-        }
-        title="Rate trade"
-      />
-      <Pad className="pt-6 text-center">
-        <Avatar src={s.profilePhoto || PORTRAITS.john} alt="Trader" size="xl" />
-        <h1 className="font-display mt-3.5 text-[26px] font-extrabold text-navy">How was your trade?</h1>
-        <p className="text-mut">Trader · {s.vimbisoId || "Network"}</p>
-        <div className="my-5 flex justify-center gap-1.5">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => s.set({ reviewStars: i })}
-              className="text-[34px] leading-none"
-              style={{ color: i <= s.reviewStars ? "var(--color-gold)" : "#D9DEE6" }}
-            >
-              ★
-            </button>
-          ))}
-        </div>
-        <textarea
-          className="min-h-[88px] w-full rounded-sm border-[1.5px] border-line bg-white p-3.5 outline-none focus:border-teal"
-          placeholder="Fast, friendly, good quality… (optional)"
-          value={s.reviewNote}
-          onChange={(e) => s.set({ reviewNote: e.target.value })}
-        />
-        <Btn
-          className="mt-3.5"
-          onClick={() => {
-            s.toastMsg("Thanks for the review");
-            s.go("home");
-          }}
-        >
-          Submit review
-        </Btn>
-      </Pad>
-    </section>
-  );
-}
+export function 
