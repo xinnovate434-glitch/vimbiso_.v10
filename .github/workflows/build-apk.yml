@@ -7,68 +7,56 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Prepare UI + copy market images
+      - name: Install
+        run: npm ci || npm install
+
+      - name: Build FULL Vimbiso React UI
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          VITE_AUTH_ENABLED: "true"
         run: |
           set -e
-          mkdir -p dist/images
-          cp -r mobile-www/* dist/ 2>/dev/null || true
-          # Images already on GitHub under public/images
-          if [ -d public/images ]; then
-            cp -r public/images/* dist/images/
-            echo "Copied public/images -> dist/images"
+          npx vite build --config vite.capacitor.config.ts
+          if [ -f dist/capacitor.html ]; then
+            mv dist/capacitor.html dist/index.html
           fi
-          ls dist/images | wc -l
-          ls -lh dist/images/bg-welcome.jpg
-          du -sh dist dist/images
-          python3 -c "
-          import os, json, pathlib
-          cfg = {
-            'supabaseUrl': os.environ.get('VITE_SUPABASE_URL') or '',
-            'supabaseAnon': os.environ.get('VITE_SUPABASE_ANON_KEY') or '',
-            'geminiKey': os.environ.get('VITE_GEMINI_API_KEY') or '',
-            'weatherKey': os.environ.get('VITE_OPENWEATHER_API_KEY') or '',
-          }
-          pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG = ' + json.dumps(cfg) + ';')
-          print('supabase', bool(cfg['supabaseUrl']))
-          "
           test -f dist/index.html
-          test -f dist/images/bg-welcome.jpg
+          ls -la dist | head -25
+          du -sh dist
+          # ensure images present
+          find dist -name 'bg-welcome.jpg' | head -3
+          find dist -name '*.jpg' | wc -l
 
-      - name: Capacitor
+      - name: Capacitor Android
         run: |
-          npm init -y
-          npm install @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6 --no-audit --no-fund
-          echo '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
+          set -e
+          npm install -D @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6
+          printf '%s\n' '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"},"android":{"allowMixedContent":true}}' > capacitor.config.json
           npx cap add android
           npx cap sync android
 
-      - name: Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Build APK
+      - name: Gradle APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: vimbiso-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
