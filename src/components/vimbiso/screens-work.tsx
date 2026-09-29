@@ -1,3 +1,4 @@
+import { useLiveBids } from "@/lib/vimbiso/use-live-bids";
 import { useEffect, useState } from "react";
 import { ChevronLeft, User, Camera, Bike } from "lucide-react";
 import { IMG, JOBS, PORTRAITS } from "@/lib/vimbiso/data";
@@ -482,7 +483,9 @@ export function DelJobsScreen() {
       />
       <Pad>
         <div className="grid gap-3">
-          {JOBS.map((j) => (
+          {JOBS.length === 0 ? (
+            <div className="rounded-md bg-white p-4 text-sm text-mut">No delivery jobs yet.</div>
+          ) : JOBS.map((j) => (
             <Card key={j.id} onClick={() => s.go("delJob")}>
               <div className="flex items-start justify-between">
                 <div>

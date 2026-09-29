@@ -312,7 +312,13 @@ export function HomeScreen() {
         <div className="mt-4.5">
           <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">{t.toptraders}</span>
           <div className="mt-2.5 grid gap-3">
-            {NEAR.map((n) => (
+            {NEAR.length === 0 ? (
+              <Card key="empty-near">
+                <div className="text-sm font-bold text-navy">No traders on the network yet</div>
+                <p className="mt-1 text-xs text-mut">Post a bid — real traders respond. No demo profiles.</p>
+                <button type="button" className="mt-3 text-xs font-bold text-teal" onClick={() => s.go("bid")}>Build a bid</button>
+              </Card>
+            ) : NEAR.map((n) => (
               <Card key={n.name} onClick={() => s.go("bid")}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -699,8 +705,8 @@ export function RadarScreen() {
       [12, "12 km — final sweep…"],
     ];
     const fnd = [
-      { a: 35, r: 0.62, n: "Chipo" },
-      { a: 150, r: 0.5, n: "John" },
+      { a: 35, r: 0.62, n: "…" },
+      { a: 150, r: 0.5, n: "…" },
       { a: 265, r: 0.74, n: "Mary" },
     ];
     const timers: number[] = [];
@@ -810,7 +816,12 @@ export function OffersScreen() {
           <span className="text-xs text-mut">market avg: $15.20/kg</span>
         </div>
         <div className="grid gap-3">
-          {OFFERS.map((o) => {
+          {OFFERS.length === 0 ? (
+            <Card key="empty-offers">
+              <div className="text-sm font-bold text-navy">Waiting for live offers</div>
+              <p className="mt-1 text-xs text-mut">When traders respond to your bid, they appear here in real time.</p>
+            </Card>
+          ) : OFFERS.map((o) => {
             const fair = fairBadge(o.price);
             const sel = s.selectedOffer === o.id;
             return (
@@ -911,7 +922,12 @@ export function OffersScreen() {
 
 export function OrderScreen() {
   const s = useVimbiso();
-  const o = OFFERS.find((x) => x.id === s.selectedOffer) ?? OFFERS[0];
+  const o = OFFERS.find((x) => x.id === s.selectedOffer) ?? null;
+  if (!o) {
+    return (
+      <section className="vn-screen"><Pad><Card><div className="text-sm font-bold text-navy">No offer selected</div><p className="mt-1 text-xs text-mut">Wait for a real trader offer on your bid.</p><Btn className="mt-3" onClick={() => s.go("offers")}>Back to offers</Btn></Card></Pad></section>
+    );
+  }
   return (
     <section className="vn-screen">
       <TopBar
@@ -1022,9 +1038,9 @@ export function StatusScreen() {
         <Card>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Avatar src={PORTRAITS.john} alt="John Vegetables" verified />
+              <Avatar src={PORTRAITS.john} alt="Trader" verified />
               <div>
-                <div className="font-extrabold text-navy">John Vegetables</div>
+                <div className="font-extrabold text-navy">Trader</div>
                 <div className="text-xs text-mut">Ready in ~30 min</div>
               </div>
             </div>
@@ -1098,9 +1114,9 @@ export function ReviewScreen() {
         title="Rate trade"
       />
       <Pad className="pt-6 text-center">
-        <Avatar src={PORTRAITS.john} alt="John" size="xl" />
+        <Avatar src={PORTRAITS.john} alt="Trader" size="xl" />
         <h1 className="font-display mt-3.5 text-[26px] font-extrabold text-navy">How was your trade?</h1>
-        <p className="text-mut">John Vegetables · VMB-004821</p>
+        <p className="text-mut">Trader · VMB-004821</p>
         <div className="my-5 flex justify-center gap-1.5">
           {[1, 2, 3, 4, 5].map((i) => (
             <button

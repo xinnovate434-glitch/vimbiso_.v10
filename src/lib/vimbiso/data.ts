@@ -81,130 +81,30 @@ export type Offer = {
   quality: string;
 };
 
-export const OFFERS: Offer[] = [
-  {
-    id: "A",
-    name: "John Vegetables",
-    vid: "VMB-004821",
-    img: PORTRAITS.john,
-    qty: "20kg",
-    price: 15,
-    rating: 4.8,
-    trust: 94,
-    dist: "2.1 km",
-    ful: "Delivery",
-    quality: "Premium",
-  },
-  {
-    id: "C",
-    name: "Chipo Produce",
-    vid: "VMB-005512",
-    img: PORTRAITS.chipo,
-    qty: "25kg",
-    price: 16,
-    rating: 4.9,
-    trust: 97,
-    dist: "1.5 km",
-    ful: "Delivery",
-    quality: "Premium",
-  },
-  {
-    id: "B",
-    name: "Mary Fresh Foods",
-    vid: "VMB-003980",
-    img: PORTRAITS.mary,
-    qty: "20kg",
-    price: 14,
-    rating: 4.6,
-    trust: 89,
-    dist: "3.4 km",
-    ful: "Collection",
-    quality: "Standard",
-  },
-];
+export const OFFERS: Offer[] = [];
 
-export const NEAR = [
-  {
-    img: PORTRAITS.john,
-    name: "John Vegetables",
-    trust: 94,
-    rating: 4.8,
-    dist: "2.1 km",
-    stock: "Tomatoes, onions",
-  },
-  {
-    img: PORTRAITS.chipo,
-    name: "Chipo Produce",
-    trust: 97,
-    rating: 4.9,
-    dist: "1.5 km",
-    stock: "Veg, fruit",
-  },
-  {
-    img: PORTRAITS.tinashe,
-    name: "Tinashe Electronics",
-    trust: 91,
-    rating: 4.7,
-    dist: "3.0 km",
-    stock: "Chargers, airtime",
-  },
-];
+export const NEAR: {
+  img: string;
+  name: string;
+  trust: number;
+  rating: number;
+  dist: string;
+  stock: string;
+}[] = [];
 
-export const JOBS = [
-  {
-    id: 1,
-    item: "20kg tomatoes (Premium)",
-    from: "Mbare Musika",
-    to: "47 Chiremba Ave, Avondale",
-    dist: "4.2 km",
-    pay: 3.5,
-    buyerTrust: 88,
-    traderTrust: 94,
-    eta: "by 10:15",
-  },
-  {
-    id: 2,
-    item: "Phone charger + cable",
-    from: "Podium Rd, Harare",
-    to: "Greendale, Harare",
-    dist: "6.8 km",
-    pay: 5,
-    buyerTrust: 92,
-    traderTrust: 87,
-    eta: "by 11:00",
-  },
-  {
-    id: 3,
-    item: "50kg maize meal",
-    from: "Chitungwiza Central",
-    to: "Zengeza 5, Chitungwiza",
-    dist: "2.1 km",
-    pay: 2.5,
-    buyerTrust: 85,
-    traderTrust: 91,
-    eta: "by 10:45",
-  },
-  {
-    id: 4,
-    item: "Fridge repair parts",
-    from: "Selous Ave, Harare",
-    to: "Mount Pleasant, Harare",
-    dist: "5.3 km",
-    pay: 4,
-    buyerTrust: 90,
-    traderTrust: 88,
-    eta: "by 12:00",
-  },
-];
+export const JOBS: {
+  id: number;
+  item: string;
+  from: string;
+  to: string;
+  dist: string;
+  pay: number;
+  buyerTrust: number;
+  traderTrust: number;
+  eta: string;
+}[] = [];
 
-export const TICKER = [
-  "Group buy pooled: 45kg tomatoes",
-  "Order #VIM00000181 completed",
-  "47 traders online near you",
-  "Delivery in transit · Avondale",
-  "USSD request · Bindura",
-  "EcoCash payment verified",
-];
+export const TICKER: string[] = [];
 
 export const ONBOARD = [
   {
