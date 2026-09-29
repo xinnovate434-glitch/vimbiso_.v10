@@ -7,53 +7,60 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Prepare UI
+      - name: Prepare Vimbiso web UI
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
-          VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
         run: |
+          set -e
           mkdir -p dist
           cp -r mobile-www/* dist/
-          python3 -c "
+          python3 - <<'PY'
           import os, json, pathlib
           cfg = {
-            'supabaseUrl': os.environ.get('VITE_SUPABASE_URL') or '',
-            'supabaseAnon': os.environ.get('VITE_SUPABASE_ANON_KEY') or '',
-            'geminiKey': os.environ.get('VITE_GEMINI_API_KEY') or '',
-            'weatherKey': os.environ.get('VITE_OPENWEATHER_API_KEY') or '',
+            "supabaseUrl": os.environ.get("VITE_SUPABASE_URL") or "",
+            "supabaseAnon": os.environ.get("VITE_SUPABASE_ANON_KEY") or "",
+            "geminiKey": os.environ.get("VITE_GEMINI_API_KEY") or "",
           }
-          pathlib.Path('dist/config.js').write_text('window.VIMBISO_CFG = ' + json.dumps(cfg) + ';')
-          print('supabase', bool(cfg['supabaseUrl']), 'gemini', bool(cfg['geminiKey']))
-          "
-          test -f dist/index.html
-          test -f dist/app.js
+          pathlib.Path("dist/config.js").write_text(
+              "window.VIMBISO_CFG = " + json.dumps(cfg) + ";\n"
+          )
+          print("supabase:", bool(cfg["supabaseUrl"]), "gemini:", bool(cfg["geminiKey"]))
+          PY
+          test -f dist/index.html && test -f dist/app.js
           ls -la dist
 
-      - name: Capacitor
+      - name: Capacitor Android
         run: |
-          npm init -y
+          set -e
+          npm init -y >/dev/null 2>&1 || true
           npm install @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6 --no-audit --no-fund
-          echo '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
+          printf '%s\n' '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"},"android":{"allowMixedContent":true}}' > capacitor.config.json
           npx cap add android
           npx cap sync android
+          MAN=android/app/src/main/AndroidManifest.xml
+          if [ -f "$MAN" ]; then
+            for p in INTERNET ACCESS_NETWORK_STATE; do
+              grep -q "android.permission.$p" "$MAN" || \
+                sed -i "/<application/i\\    <uses-permission android:name=\"android.permission.$p\" />" "$MAN"
+            done
+          fi
 
-      - name: Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Build APK
+      - name: Gradle APK
         working-directory: android
         run: |
           chmod +x gradlew
