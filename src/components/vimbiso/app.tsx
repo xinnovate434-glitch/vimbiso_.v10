@@ -62,6 +62,8 @@ import {
   SafeMeetScreen,
   TrustScreen,
 } from "./screens-innovate";
+import { VimbyCallScreen } from "./screens-vimby-call";
+import { SettingsScreen } from "./screens-settings";
 
 const SCREENS: Record<Screen, () => ReactNode> = {
   splash: () => <SplashScreen />,
@@ -99,6 +101,8 @@ const SCREENS: Record<Screen, () => ReactNode> = {
   trust: () => <TrustScreen />,
   agentKit: () => <AgentKitScreen />,
   networkMore: () => <NetworkExtrasScreen />,
+  settings: () => <SettingsScreen />,
+  vimbyCall: () => <VimbyCallScreen />,
 };
 
 const NAV = {
@@ -138,7 +142,7 @@ export function VimbisoApp() {
 
   const Screen = SCREENS[screen];
   const hideNav =
-    HIDE_NAV.includes(screen) ||
+    HIDE_NAV.includes(screen) || screen === "vimbyCall" || screen === "settings" ||
     role === "admin" ||
     screen === "ai" ||
     screen === "messages" ||

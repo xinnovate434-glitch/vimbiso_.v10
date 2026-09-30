@@ -37,7 +37,9 @@ export type Screen =
   | "safeMeet"
   | "trust"
   | "agentKit"
-  | "networkMore";
+  | "networkMore"
+  | "settings"
+  | "vimbyCall";
 
 export type BidItem = {
   name: string;
@@ -143,6 +145,8 @@ export const HIDE_NAV: Screen[] = [
   "trust",
   "agentKit",
   "networkMore",
+  "settings",
+  "vimbyCall",
 ];
 
 function homeFor(role: Role): Screen {
@@ -269,14 +273,10 @@ export const useVimbiso = create<State & Actions>((set, get) => ({
       set({ toast: { id: Date.now(), message: "Account not approved yet" } });
       return;
     }
-    const firstAi =
-      get().firstAiDone ||
-      (typeof localStorage !== "undefined" && localStorage.getItem("vimbiso_first_ai") === "1");
-    // First time into the app → open Vimbiso AI welcome (typewriter + Gemini)
     set({
       role: resolved,
-      screen: firstAi ? homeFor(resolved) : "ai",
-      firstAiDone: firstAi,
+      screen: "vimbyCall",
+      firstAiDone: true,
     });
     saveSession({ ...get(), role: resolved });
   },
