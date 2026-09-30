@@ -572,3 +572,22 @@ input[type="range"].vn-range {
   max-height: 100%;
   overflow: hidden;
 }
+
+
+/* Settings dark mode */
+body.vn-dark {
+  background: #0b1c2c;
+}
+body.vn-dark .vn-phone {
+  background: #0e2a47;
+}
+body.vn-dark .vn-screen {
+  background: #0e2a47 !important;
+  color: #e8eef5;
+}
+body.vn-dark .text-navy { color: #e8eef5 !important; }
+body.vn-dark .text-mut { color: #9db0c4 !important; }
+body.vn-dark .bg-white, body.vn-dark .vn-screen [class*="bg-white"] {
+  background-color: #163554 !important;
+}
+body.vn-dark .border-line { border-color: #2a4a68 !important; }

@@ -656,6 +656,13 @@ export function ProfileScreen() {
           <Badge tone="gold">Trust {s.trustScore || 0}</Badge>
           <Badge>{s.completedTrades >= 100 ? "100-trade badge" : `${s.completedTrades} trades`}</Badge>
         </div>
+        <button
+          type="button"
+          onClick={() => s.go("settings")}
+          className="mt-3 rounded-full border border-line bg-white px-4 py-2 text-xs font-extrabold text-navy shadow-sm"
+        >
+          Settings
+        </button>
         <div className="vn-idcard mt-4 text-left">
           <div className="text-[11px] font-extrabold tracking-[0.14em] text-gold-2">VIMBISO ID</div>
           <div className="font-mono text-[28px] font-extrabold">{s.vimbisoId || "Pending ID"}</div>

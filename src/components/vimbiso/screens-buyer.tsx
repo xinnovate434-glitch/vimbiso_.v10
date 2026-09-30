@@ -47,6 +47,7 @@ import {
   TopBar,
   Wordmark,
 } from "./primitives";
+import { cn } from "@/lib/utils";
 import { MapHeat } from "./map-heat";
 export function HomeScreen() {
   const s = useVimbiso();
@@ -235,7 +236,7 @@ export function BidScreen() {
             <ChevronLeft />
           </IconBtn>
         }
-        title="Build your bid"
+        title="My need"
         right={<Badge>{s.bidItems.length} items</Badge>}
       />
       <Pad className="relative z-[2]">
