@@ -104,21 +104,21 @@ const SCREENS: Record<Screen, () => ReactNode> = {
 const NAV = {
   buyer: [
     ["home", "Home", Home],
-    ["bid", "Bid", ShoppingBag],
-    ["messages", "Messages", Inbox],
-    ["profile", "Profile", User],
+    ["bid", "My need", ShoppingBag],
+    ["messages", "Chat", Inbox],
+    ["profile", "Me", User],
   ],
   trader: [
     ["trade", "Trade", Zap],
     ["incoming", "Requests", Handshake],
-    ["messages", "Messages", Inbox],
-    ["profile", "Profile", User],
+    ["messages", "Chat", Inbox],
+    ["profile", "Me", User],
   ],
   delivery: [
     ["delDash", "Drive", Bike],
     ["delJobs", "Jobs", ClipboardList],
     ["status", "History", Package],
-    ["profile", "Profile", User],
+    ["profile", "Me", User],
   ],
 } as const;
 
@@ -199,23 +199,23 @@ function FabMenu({ role }: { role: string }) {
   const items =
     role === "trader"
       ? [
-          { id: "ai", label: "Talk to AI", sub: "Always available", Icon: Mic, run: () => go("ai") },
+          { id: "ai", label: "Vimby", sub: "Always available", Icon: Mic, run: () => go("ai") },
           { id: "incoming", label: "Buyer requests", sub: "Respond live", Icon: Inbox, run: () => go("incoming") },
-          { id: "msg", label: "Messages", sub: "Customers", Icon: Handshake, run: () => go("messages") },
+          { id: "msg", label: "Chat", sub: "Customers", Icon: Handshake, run: () => go("messages") },
           { id: "offer", label: "Make offer", sub: "Quote a buyer", Icon: Zap, run: () => go("makeoffer") },
         ]
       : role === "delivery"
         ? [
             { id: "jobs", label: "Open jobs", sub: "Deliveries near you", Icon: ClipboardList, run: () => go("delJobs") },
-            { id: "map", label: "Network map", sub: "Expand by distance", Icon: Map, run: () => go("radar") },
+            { id: "map", label: "Find nearby", sub: "Expand by distance", Icon: Map, run: () => go("radar") },
             { id: "dash", label: "Driver desk", sub: "Go online", Icon: Bike, run: () => go("delDash") },
             { id: "hist", label: "History", sub: "Past runs", Icon: Package, run: () => go("status") },
           ]
         : [
-            { id: "ai", label: "Talk to AI", sub: "Always available", Icon: Mic, run: () => go("ai") },
-            { id: "bid", label: "Build a bid", sub: "Say what you need", Icon: ShoppingBag, run: () => go("bid") },
-            { id: "map", label: "Network map", sub: "Find people nearby", Icon: Map, run: () => go("radar") },
-            { id: "msg", label: "Messages", sub: "Friends & customers", Icon: Inbox, run: () => go("messages") },
+            { id: "ai", label: "Vimby", sub: "Always available", Icon: Mic, run: () => go("ai") },
+            { id: "bid", label: "My need", sub: "Say what you need", Icon: ShoppingBag, run: () => go("bid") },
+            { id: "map", label: "Find nearby", sub: "Find people nearby", Icon: Map, run: () => go("radar") },
+            { id: "msg", label: "Chat", sub: "Friends & customers", Icon: Inbox, run: () => go("messages") },
           ];
 
   return (

@@ -2,6 +2,7 @@ import { useLiveBids } from "@/lib/vimbiso/use-live-bids";
 import { useEffect, useState } from "react";
 import { ChevronLeft, User, Camera, Bike } from "lucide-react";
 import { IMG, JOBS, PORTRAITS } from "@/lib/vimbiso/data";
+import { computeTrust, trustLabel } from "@/lib/vimbiso/trust";
 import { useVimbiso } from "@/lib/vimbiso/store";
 import {
   Avatar,
@@ -58,7 +59,7 @@ export function TradeScreen() {
         </button>
         <div className="mt-3.5 grid grid-cols-2 gap-3">
           {[
-            [String(s.trustScore || 0), "Trust Score"],
+            [s.completedTrades ? String(s.trustScore || 0) : "—", s.completedTrades ? "Trust" : "New on Vimbiso"],
             [s.rating ? `${s.rating.toFixed(1)} rating` : "No ratings yet", "From your trades"],
             [String(s.completedTrades || 0), "Completed trades"],
             [s.online ? "Live" : "0", "Requests"],
@@ -642,7 +643,7 @@ export function ProfileScreen() {
           }
         />
         <img
-          src={s.profilePhoto || PORTRAITS.tendai}
+          src={s.profilePhoto || ""}
           alt={s.name}
           className="mx-auto h-[84px] w-[84px] rounded-3xl border-4 border-white object-cover"
         />
@@ -668,7 +669,7 @@ export function ProfileScreen() {
         </div>
         <div className="mt-3.5 grid grid-cols-2 gap-3 text-left">
           {[
-            [String(s.trustScore || 0), "Trust Score"],
+            [s.completedTrades ? String(s.trustScore || 0) : "—", s.completedTrades ? "Trust" : "New on Vimbiso"],
             [s.rating ? s.rating.toFixed(1) : "—", "Rating"],
             [String(s.completedTrades || 0), "Completed"],
             [s.userStatus === "approved" ? "Verified" : "Pending", "Status"],

@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronLeft,
-  Mic,
-  Search,
-  Repeat,
-  Users,
-  Smartphone,
   BatteryLow,
-  User,
-  ShoppingBag,
-  Package,
   CheckCircle2,
+  ChevronLeft,
   CloudSun,
+  Map,
+  MapPin,
+  MessageCircle,
+  Mic,
+  Package,
+  Repeat,
+  Search,
+  ShoppingBag,
+  Smartphone,
+  User,
+  Users,
 } from "lucide-react";
 import {
   CATS,
@@ -45,39 +48,48 @@ import {
   Wordmark,
 } from "./primitives";
 import { MapHeat } from "./map-heat";
-import { cn } from "@/lib/utils";
-
-export function HomeScreen() {
+iexport function HomeScreen() {
   const s = useVimbiso();
   const t = DICT[s.lang];
-  const ticker = useMemo(() => [...TICKER, ...TICKER], []);
   const [weather, setWeather] = useState<WeatherNow | null>(null);
-  const [heat, setHeat] = useState<{ id: string; name: string; intensity: number; traders: number }[]>([]);
 
   useEffect(() => {
     (async () => {
-      const { getPhoneLocation } = await import("@/lib/vimbiso/geo");
-      const pos = await getPhoneLocation();
-      if (pos) {
-        const { fetchWeatherByCoords } = await import("@/lib/vimbiso/weather");
-        const w = await fetchWeatherByCoords(pos.lat, pos.lon);
-        if (w) { setWeather(w); return; }
+      try {
+        const { getPhoneLocation } = await import("@/lib/vimbiso/geo");
+        const pos = await getPhoneLocation();
+        if (pos) {
+          const { fetchWeatherByCoords } = await import("@/lib/vimbiso/weather");
+          const w = await fetchWeatherByCoords(pos.lat, pos.lon);
+          if (w) {
+            setWeather(w);
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
       }
-      if (s.city) fetchWeather(s.city).then(setWeather);
+      if (s.city) {
+        try {
+          const { fetchWeather } = await import("@/lib/vimbiso/weather");
+          fetchWeather(s.city).then(setWeather);
+        } catch {
+          /* ignore */
+        }
+      }
     })();
-    import("@/lib/vimbiso/heatmap").then(({ buildHeatCells }) => {
-      buildHeatCells().then(setHeat).catch(() => {});
-    });
   }, [s.city]);
 
+  const chips = ["Tomatoes 20kg", "Maize meal", "Onions 10kg", "I want to sell"];
+
   return (
-    <section className="vn-screen">
-      <Photo src={IMG.home} alt="Leafy greens stacked at a produce market" overlay="header" className="hero" />
-      <div className="relative z-[2] -mt-[280px]">
+    <section className="vn-screen bg-[#f4f7fb]">
+      <Photo src={IMG.home} alt="Market produce" overlay="header" className="hero" />
+      <div className="relative z-[2] -mt-[240px]">
         <div className="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top),10px)] h-14">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Wordmark dark />
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-teal-2">
+            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-teal-2">
               <i className="vn-live" /> live
             </span>
           </div>
@@ -98,279 +110,115 @@ export function HomeScreen() {
                 </button>
               ))}
             </div>
-            <IconBtn light onClick={() => { s.toggleLite(); s.toastMsg(s.lite ? "Lite mode off" : "Lite mode on — saving data"); }}>
-              <BatteryLow className="size-[18px]" />
-            </IconBtn>
             <IconBtn light onClick={() => s.go("profile")}>
-              <User className="size-[18px]" />
+              <User className="size-5" />
             </IconBtn>
           </div>
         </div>
-        <div className="px-[18px] pt-4 pb-5">
-          <p className="text-[13px] font-semibold text-white/80">{s.name ? `Hi, ${s.name}` : t.hello}</p>
-          <h1 className="font-display mt-1 text-[28px] font-extrabold text-white">{t.need}</h1>
-          <div className="mt-4 flex items-center gap-2.5 rounded-[18px] bg-white py-1.5 pr-1.5 pl-4 shadow-[var(--shadow-lift)]">
-            <Search className="size-5 shrink-0 text-mut" />
-            <input
-              value={s.search}
-              onChange={(e) => s.set({ search: e.target.value })}
-              placeholder="Tomatoes, charger, plumber…"
-              className="min-w-0 flex-1 border-0 bg-transparent text-base outline-none"
-            />
-            <button
-              type="button"
-              onClick={async () => {
-                s.set({ voiceOn: true });
-                try {
-                  const { canListen, listenOnce, speak } = await import("@/lib/vimbiso/voice");
-                  if (!canListen()) {
-                    s.toastMsg("Voice not supported — type your need instead");
-                    return;
-                  }
-                  s.toastMsg("Listening… speak now");
-                  const text = await listenOnce("en-US");
-                  if (text) {
-                    s.set({ search: text, bidItem: text });
-                    s.toastMsg("Heard: " + text);
-                    speak("You need " + text);
-                  }
-                } catch (e) {
-                  s.toastMsg(e instanceof Error ? e.message : "Voice failed");
-                } finally {
-                  s.set({ voiceOn: false });
-                }
-              }}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-teal to-teal-2 text-white shadow-[0_6px_16px_rgb(15_118_110_/_0.35)]"
-              aria-label="Search by voice"
-            >
-              <Mic className="size-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => s.go("bid")}
-              className="rounded-[13px] bg-teal px-4 py-3 text-sm font-extrabold text-white"
-            >
-              {t.buildbid}
-            </button>
-          </div>
-          <div className="mt-3.5 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                s.set({
-                  bidItems: [
-                    {
-                      name: "Tomatoes",
-                      quality: "Premium",
-                      qty: 20,
-                      unit: "kg",
-                      price: 15,
-                      total: 300,
-                      photo: IMG.tomatoes,
-                    },
-                  ],
-                });
-                s.toastMsg("Loaded your last order");
-                s.go("basket");
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-line bg-white px-3.5 py-2 text-xs font-bold text-navy shadow-[var(--shadow-card)]"
-            >
-              <Repeat className="size-3.5" /> Reorder: 20kg tomatoes
-            </button>
-            <button
-              type="button"
-              onClick={() => s.go("bid")}
-              className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-line bg-white px-3.5 py-2 text-xs font-bold text-navy shadow-[var(--shadow-card)]"
-            >
-              <Users className="size-3.5" /> Pool a group buy
-            </button>
-            <button
-              type="button"
-              onClick={() => s.go("ussd")}
-              className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-line bg-white px-3.5 py-2 text-xs font-bold text-navy shadow-[var(--shadow-card)]"
-            >
-              <Smartphone className="size-3.5" /> USSD mode
-            </button>
-          </div>
+
+        <div className="px-4 pb-3 pt-6 text-white">
+          <p className="text-sm text-white/80">
+            {t.hello}
+            {s.name ? `, ${s.name.split(" ")[0]}` : ""}
+          </p>
+          <h1 className="font-display text-[1.75rem] font-extrabold leading-tight drop-shadow">
+            {t.need}
+          </h1>
+          {weather ? (
+            <p className="mt-1 text-xs text-white/75">
+              {s.city || "Near you"} · {weather.temp}° · {weather.summary}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-white/75">{s.city || "Vimbiso Network"}</p>
+          )}
         </div>
       </div>
-      <div className="px-4 pb-24">
-        <div className="flex overflow-hidden rounded-md bg-navy text-white shadow-[var(--shadow-card)]">
-          {[
-            ["—", t.online],
-            ["—", t.matched],
-            [s.rating ? String(s.rating) : "—", t.rating],
-          ].map(([v, k], i) => (
-            <div key={k} className="relative flex-1 px-1.5 py-3 text-center">
-              {i > 0 ? <i className="absolute top-[18%] left-0 h-[64%] w-px bg-white/16" /> : null}
-              <div className="font-display text-[17px] font-extrabold text-gold-2">{v}</div>
-              <div className="mt-0.5 text-[10px] font-semibold text-white/70">{k}</div>
-            </div>
+
+      <Pad className="relative z-[2] -mt-2 space-y-3 pb-28">
+        <button
+          type="button"
+          onClick={() => s.go("ai")}
+          className="flex w-full items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3.5 text-left shadow-[var(--shadow-card)]"
+        >
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-teal/12 text-teal">
+            <Mic className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-extrabold text-navy">Ask Vimby</span>
+            <span className="block text-xs text-mut">Type or talk — what do you need to buy or sell?</span>
+          </span>
+        </button>
+
+        <div className="flex flex-wrap gap-2">
+          {chips.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                s.set({ search: c, bidItem: c });
+                s.go("ai");
+              }}
+              className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy shadow-sm"
+            >
+              {c}
+            </button>
           ))}
         </div>
 
-        {/* Live weather */}
-        {weather ? (
-          <Card className="mt-3.5 flex items-center gap-3 bg-gradient-to-r from-navy/5 to-teal/5">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal/15 text-teal">
-              <CloudSun className="size-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="font-display text-xl font-extrabold text-navy">
-                  {weather.temp}°C
-                </span>
-                <span className="text-xs font-semibold text-mut capitalize">
-                  {weather.description} · {weather.city}
-                </span>
-              </div>
-              <p className="mt-0.5 text-[11px] text-mut">
-                {weatherAdvice(weather, s.role === "trader" ? "trader" : s.role === "delivery" ? "delivery" : "buyer")}
-              </p>
-            </div>
-          </Card>
-        ) : null}
+        <Btn variant="teal" className="w-full" onClick={() => s.go("bid")}>
+          {t.buildbid2}
+        </Btn>
 
-        {/* Pending approval banner */}
-        {s.userStatus === "pending" && s.userId ? (
-          <div className="mt-3 rounded-lg border border-gold/40 bg-gold/10 px-3.5 py-2.5 text-xs font-semibold text-gold-d">
-            Your account is waiting for admin approval. You can browse, but trading unlocks after approval.
-          </div>
-        ) : null}
-
-        {/* Demand heat map (cells) */}
-        {heat.length > 0 ? (
-          <Card className="mt-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">
-                Demand heat map
-              </span>
-              <button type="button" onClick={() => s.go("radar")} className="text-xs font-bold text-teal">
-                Open radar
-              </button>
-            </div>
-            <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-              {heat.slice(0, 9).map((c) => (
-                <div
-                  key={c.id}
-                  className="rounded-md px-2 py-2 text-center"
-                  style={{
-                    background: `rgba(15, 118, 110, ${0.12 + c.intensity * 0.55})`,
-                  }}
-                >
-                  <div className="text-[10px] font-bold leading-tight text-navy">{c.name}</div>
-                  <div className="text-[9px] text-mut">{c.traders} traders</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 overflow-hidden rounded-lg">
-              <MapHeat height={220} />
-            </div>
-          </Card>
-        ) : null}
-
-        {/* Quick actions */}
-        <div className="mt-3.5 grid grid-cols-3 gap-2.5">
-          <button
-            type="button"
-            onClick={() => s.go("bid")}
-            className="flex flex-col items-center gap-1.5 rounded-lg bg-white px-2 py-3 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 active:scale-[0.98]"
-          >
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-teal/12 text-teal">
-              <ShoppingBag className="size-5" strokeWidth={2.2} />
-            </span>
-            <span className="text-[11px] font-extrabold text-navy">New bid</span>
-          </button>
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => s.go("radar")}
-            className="flex flex-col items-center gap-1.5 rounded-lg bg-white px-2 py-3 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 active:scale-[0.98]"
+            className="rounded-xl bg-white p-3 text-center shadow-[var(--shadow-card)]"
           >
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-navy/8 text-navy">
-              <Search className="size-5" strokeWidth={2.2} />
-            </span>
-            <span className="text-[11px] font-extrabold text-navy">Scan radar</span>
+            <Map className="mx-auto size-5 text-teal" />
+            <div className="mt-1 text-[11px] font-extrabold text-navy">Find nearby</div>
           </button>
           <button
             type="button"
-            onClick={() => s.go("status")}
-            className="flex flex-col items-center gap-1.5 rounded-lg bg-white px-2 py-3 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 active:scale-[0.98]"
+            onClick={() => s.go("messages")}
+            className="rounded-xl bg-white p-3 text-center shadow-[var(--shadow-card)]"
           >
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-gold/15 text-gold-d">
-              <Package className="size-5" strokeWidth={2.2} />
-            </span>
-            <span className="text-[11px] font-extrabold text-navy">My orders</span>
+            <MessageCircle className="mx-auto size-5 text-teal" />
+            <div className="mt-1 text-[11px] font-extrabold text-navy">Chat</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => s.go("safeMeet")}
+            className="rounded-xl bg-white p-3 text-center shadow-[var(--shadow-card)]"
+          >
+            <MapPin className="mx-auto size-5 text-teal" />
+            <div className="mt-1 text-[11px] font-extrabold text-navy">Safe meet</div>
           </button>
         </div>
 
-        <div className="vn-ticker mt-3">
-          <div className="vn-ticker-track">
-            {ticker.map((item, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-navy">
-                <i className="h-1.5 w-1.5 rounded-full bg-teal-2" />
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="mt-4.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">{t.categories}</span>
-            <button type="button" onClick={() => s.go("bid")} className="text-xs font-bold text-teal">
-              {t.buildbid2}
-            </button>
-          </div>
-          <div className="mt-2.5 grid grid-cols-4 gap-2.5">
-            {CATS.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  s.set({ bidCat: c.id, bidStep: 1 });
-                  s.go("bid");
-                }}
-                className="overflow-hidden rounded-md bg-white text-center shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 active:scale-[0.98]"
-              >
-                <img src={c.photo} alt="" className="h-14 w-full object-cover" />
-                <div className="px-1 py-2 text-[11px] font-bold leading-tight text-navy">{c.name}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="mt-4.5">
-          <span className="text-[11px] font-extrabold tracking-[0.08em] text-mut uppercase">{t.toptraders}</span>
-          <div className="mt-2.5 grid gap-3">
-            {NEAR.length === 0 ? (
-              <Card key="empty-near">
-                <div className="text-sm font-bold text-navy">No traders on the network yet</div>
-                <p className="mt-1 text-xs text-mut">Post a bid — real traders respond. No demo profiles.</p>
-                <button type="button" className="mt-3 text-xs font-bold text-teal" onClick={() => s.go("bid")}>Build a bid</button>
-              </Card>
-            ) : NEAR.map((n) => (
-              <Card key={n.name} onClick={() => s.go("bid")}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Avatar src={n.img} alt={n.name} verified />
-                    <div>
-                      <div className="font-extrabold text-navy">{n.name}</div>
-                      <div className="text-xs text-mut">
-                        {n.stock} · {n.dist}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge tone="gold">Trust {n.trust}</Badge>
-                    <div className="mt-1 flex items-center justify-end gap-1">
-                      <Stars value={n.rating} />
-                      <span className="text-xs text-mut">{n.rating}</span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </div>
+        <Card>
+          <div className="text-[11px] font-extrabold uppercase tracking-wide text-mut">How it works</div>
+          <ol className="mt-2 space-y-1.5 text-xs text-navy">
+            <li>
+              <span className="font-bold text-teal">1</span> Say what you need
+            </li>
+            <li>
+              <span className="font-bold text-teal">2</span> Real traders respond
+            </li>
+            <li>
+              <span className="font-bold text-teal">3</span> Chat · meet · pay on collect
+            </li>
+          </ol>
+        </Card>
+
+        <button
+          type="button"
+          onClick={() => s.go("networkMore")}
+          className="w-full text-center text-xs font-bold text-teal"
+        >
+          More network tools →
+        </button>
+      </Pad>
     </section>
   );
 }
@@ -597,7 +445,7 @@ export function BidScreen() {
                 {s.bidItems.length}
               </span>
               <div>
-                <div className="text-sm font-extrabold">Your bid</div>
+                <div className="text-sm font-extrabold">My need</div>
                 <div className="text-xs text-white/60">
                   {s.bidItems.length} item{s.bidItems.length === 1 ? "" : "s"}
                 </div>
@@ -634,7 +482,7 @@ export function BasketScreen() {
             <ChevronLeft />
           </IconBtn>
         }
-        title="Your bid"
+        title="My need"
       />
       <Pad className="relative z-[2]">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-navy to-navy-2 p-[22px] text-white">
@@ -646,7 +494,7 @@ export function BasketScreen() {
             <Badge tone="glass">Now</Badge>
           </div>
         </div>
-        <Btn variant="outline" className="mt-3" onClick={() => s.set({ poolOpen: true })}>
+        <Btn variant="outline" className="mt-3" onClick={() => s.set({ poolOpen: true, poolJoined: 3 })}>
           Pool this bid with neighbours
         </Btn>
         <div className="mt-4 mb-2.5 flex justify-between">
@@ -720,9 +568,11 @@ export function RadarScreen() {
   const s = useVimbiso();
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<{
-    setView?: (c: [number, number], z: number) => void;
+    flyTo?: (o: Record<string, unknown>) => void;
+    easeTo?: (o: Record<string, unknown>) => void;
     remove?: () => void;
-    fitBounds?: (b: unknown) => void;
+    resize?: () => void;
+    getZoom?: () => number;
   } | null>(null);
   const markersRef = useRef<{ remove: () => void }[]>([]);
   const [st, setSt] = useState("Finding your position…");
@@ -735,7 +585,14 @@ export function RadarScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    const timers: number[] = [];
+    let map: {
+      flyTo?: (o: Record<string, unknown>) => void;
+      easeTo?: (o: Record<string, unknown>) => void;
+      remove?: () => void;
+      resize?: () => void;
+      on?: (e: string, cb: () => void) => void;
+      addControl?: (c: unknown, pos?: string) => void;
+    } | null = null;
 
     function haversineKm(
       a: { lat: number; lon: number },
@@ -752,39 +609,27 @@ export function RadarScreen() {
       return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
     }
 
-    function loadLeaflet(): Promise<{
-      map: (el: HTMLElement, o: Record<string, unknown>) => {
-        setView: (c: [number, number], z: number) => unknown;
-        remove: () => void;
-        addLayer: (l: unknown) => void;
-      };
-      tileLayer: (url: string, o: Record<string, unknown>) => unknown;
-      marker: (c: [number, number], o?: Record<string, unknown>) => {
-        addTo: (m: unknown) => { remove: () => void; bindPopup: (h: string) => unknown };
-        remove: () => void;
-      };
-      divIcon: (o: Record<string, unknown>) => unknown;
-    }> {
+    function loadMapbox(): Promise<void> {
       return new Promise((resolve, reject) => {
-        const w = window as unknown as { L?: unknown };
-        if (w.L) {
-          resolve(w.L as never);
+        const w = window as unknown as { mapboxgl?: unknown };
+        if (w.mapboxgl) {
+          resolve();
           return;
         }
         const link = document.createElement("link");
         link.rel = "stylesheet";
-        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        link.href = "https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css";
         document.head.appendChild(link);
         const script = document.createElement("script");
-        script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-        script.onload = () => resolve((window as unknown as { L: never }).L);
-        script.onerror = () => reject(new Error("map load failed"));
+        script.src = "https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Mapbox failed"));
         document.body.appendChild(script);
       });
     }
 
     async function run() {
-      // GPS first (fast timeout)
+      // GPS
       let origin = { lat: -17.8292, lon: 31.0522 };
       try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -792,53 +637,16 @@ export function RadarScreen() {
           else
             navigator.geolocation.getCurrentPosition(resolve, reject, {
               enableHighAccuracy: true,
-              timeout: 8000,
-              maximumAge: 60_000,
+              timeout: 15000,
             });
         });
         origin = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        if (!cancelled) setSt("You are here — expanding…");
+        if (!cancelled) setSt("You are here — expanding the network map…");
       } catch {
-        if (!cancelled) setSt("Using area centre — expanding…");
+        if (!cancelled) setSt("Using approximate area — expanding slowly…");
       }
 
-      // Start map ASAP (Leaflet + OpenStreetMap — no token, loads fast)
-      let L: Awaited<ReturnType<typeof loadLeaflet>> | null = null;
-      let map: {
-        setView: (c: [number, number], z: number) => unknown;
-        remove: () => void;
-        addLayer: (l: unknown) => void;
-      } | null = null;
-      try {
-        L = await loadLeaflet();
-        if (cancelled || !mapRef.current) return;
-        map = L.map(mapRef.current, { zoomControl: true, attributionControl: false });
-        map.setView([origin.lat, origin.lon], 15);
-        map.addLayer(
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            maxZoom: 19,
-            attribution: "© OpenStreetMap",
-          }),
-        );
-        mapObj.current = map;
-        if (!cancelled) setMapReady(true);
-
-        const youIcon = L.divIcon({
-          className: "",
-          html: '<div style="width:16px;height:16px;border-radius:99px;background:#0f766e;border:3px solid #fff;box-shadow:0 0 0 5px rgba(15,118,110,.25)"></div>',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-        });
-        const youM = L.marker([origin.lat, origin.lon], { icon: youIcon }).addTo(map);
-        markersRef.current.push(youM as unknown as { remove: () => void });
-      } catch {
-        if (!cancelled) {
-          setMapReady(true);
-          setSt("Map offline — still scanning by distance");
-        }
-      }
-
-      // Real network users only
+      // Real network users
       type U = {
         id: string;
         name: string;
@@ -866,19 +674,16 @@ export function RadarScreen() {
           lon = u.lon;
           distKm = haversineKm(origin, { lat, lon });
         } else if (u.city && s.city && u.city.toLowerCase() === s.city.toLowerCase()) {
+          // same city, no GPS on profile yet — place in a small ring so map can show them
           const ang = (i * 47 * Math.PI) / 180;
           distKm = 0.4 + ((i * 11) % 25) / 10;
           lat = origin.lat + (distKm / 111) * Math.cos(ang);
-          lon =
-            origin.lon +
-            (distKm / (111 * Math.cos((origin.lat * Math.PI) / 180))) * Math.sin(ang);
+          lon = origin.lon + (distKm / (111 * Math.cos((origin.lat * Math.PI) / 180))) * Math.sin(ang);
         } else {
           distKm = 12 + ((i * 17) % 30);
           const ang = (i * 33 * Math.PI) / 180;
           lat = origin.lat + (distKm / 111) * Math.cos(ang);
-          lon =
-            origin.lon +
-            (distKm / (111 * Math.cos((origin.lat * Math.PI) / 180))) * Math.sin(ang);
+          lon = origin.lon + (distKm / (111 * Math.cos((origin.lat * Math.PI) / 180))) * Math.sin(ang);
         }
         return {
           id: u.id,
@@ -891,60 +696,151 @@ export function RadarScreen() {
         };
       });
 
+      // Map
+      try {
+        const { config } = await import("@/lib/vimbiso/config");
+        const token = config.mapbox.token;
+        if (!token || !mapRef.current) {
+          if (!cancelled) setSt("Map token missing — list-only scan");
+        } else {
+          await loadMapbox();
+          if (cancelled) return;
+          const gl = (window as unknown as {
+            mapboxgl: {
+              accessToken: string;
+              Map: new (o: Record<string, unknown>) => typeof map extends infer M ? M : never;
+              Marker: new (o?: Record<string, unknown>) => {
+                setLngLat: (ll: [number, number]) => {
+                  setPopup?: (p: unknown) => { addTo: (m: unknown) => unknown };
+                  addTo: (m: unknown) => { remove: () => void };
+                };
+                remove: () => void;
+              };
+              Popup: new (o?: Record<string, unknown>) => {
+                setHTML: (h: string) => {
+                  setLngLat: (ll: [number, number]) => { addTo: (m: unknown) => unknown };
+                };
+              };
+              NavigationControl: new () => unknown;
+            };
+          }).mapboxgl;
+
+          gl.accessToken = token;
+          map = new gl.Map({
+            container: mapRef.current,
+            style: "mapbox://styles/mapbox/streets-v12",
+            center: [origin.lon, origin.lat],
+            zoom: 15.2,
+            pitch: 45,
+            bearing: -12,
+            attributionControl: false,
+          }) as typeof map;
+          mapObj.current = map;
+          map.addControl?.(new gl.NavigationControl(), "bottom-right");
+          map.on?.("load", () => {
+            map?.resize?.();
+            if (!cancelled) setMapReady(true);
+          });
+
+          // You marker
+          const you = document.createElement("div");
+          you.style.cssText =
+            "width:18px;height:18px;border-radius:999px;background:#0f766e;border:3px solid #fff;box-shadow:0 0 0 6px rgba(15,118,110,0.25)";
+          const youM = new gl.Marker({ element: you }).setLngLat([origin.lon, origin.lat]).addTo(map);
+          markersRef.current.push(youM as unknown as { remove: () => void });
+        }
+      } catch {
+        if (!cancelled) setSt("Map unavailable — still scanning by distance");
+      }
+
+      // Slow expand: rings in meters then km — not a classic radar sweep
       const rings = [0.15, 0.3, 0.5, 0.8, 1.2, 2, 3.5, 5, 8, 12, 18, 25];
-      const zoomFor = (km: number) => Math.max(10, 15.5 - Math.log2(1 + km * 3));
+      // zoom roughly maps range: close = high zoom
+      const zoomFor = (km: number) => Math.max(9.5, 15.4 - Math.log2(1 + km * 3.2));
+
       const revealed = new Set<string>();
+      const gl = (window as unknown as {
+        mapboxgl?: {
+          Marker: new (o?: Record<string, unknown>) => {
+            setLngLat: (ll: [number, number]) => {
+              addTo: (m: unknown) => { remove: () => void };
+            };
+            remove: () => void;
+          };
+          Popup: new (o?: Record<string, unknown>) => {
+            setHTML: (h: string) => unknown;
+            setLngLat?: (ll: [number, number]) => { addTo: (m: unknown) => unknown };
+          };
+        };
+      }).mapboxgl;
 
       for (const ring of rings) {
         if (cancelled) return;
         setRangeKm(ring);
-        setSt(ring < 1 ? `Expanding to ${Math.round(ring * 1000)} m…` : `Expanding to ${ring} km…`);
+        const label =
+          ring < 1
+            ? `Expanding to ${Math.round(ring * 1000)} m…`
+            : `Expanding to ${ring} km…`;
+        setSt(label);
+
+        // Smooth map zoom-out (slow)
         try {
-          map?.setView([origin.lat, origin.lon], zoomFor(ring));
+          map?.easeTo?.({
+            center: [origin.lon, origin.lat],
+            zoom: zoomFor(ring),
+            duration: 1600,
+            pitch: ring > 5 ? 30 : 45,
+          });
         } catch {
           /* ignore */
         }
 
+        // Reveal people only when range reaches them
         for (const u of withDist.filter((x) => x.distKm <= ring && !revealed.has(x.id))) {
           revealed.add(u.id);
           setFound((cur) =>
             cur.some((c) => c.id === u.id)
               ? cur
-              : [...cur, { id: u.id, name: u.name, distKm: u.distKm, role: u.role, city: u.city }],
+              : [
+                  ...cur,
+                  {
+                    id: u.id,
+                    name: u.name,
+                    distKm: u.distKm,
+                    role: u.role,
+                    city: u.city,
+                  },
+                ],
           );
-          setSt(
-            `${u.name} · ${u.distKm < 1 ? Math.round(u.distKm * 1000) + " m" : u.distKm.toFixed(1) + " km"}`,
-          );
-          if (map && L) {
+          setSt(`${u.name} · ${u.distKm < 1 ? Math.round(u.distKm * 1000) + " m" : u.distKm.toFixed(1) + " km"} away`);
+
+          if (map && gl) {
             try {
-              const icon = L.divIcon({
-                className: "",
-                html: `<div style="padding:3px 8px;border-radius:99px;background:#e0a32b;color:#0e2a47;font:700 10px system-ui;border:2px solid #fff;white-space:nowrap">${u.name.split(" ")[0]}</div>`,
-                iconSize: [60, 24],
-                iconAnchor: [30, 12],
-              });
-              const m = L.marker([u.lat, u.lon], { icon }).addTo(map);
+              const el = document.createElement("div");
+              el.style.cssText =
+                "min-width:8px;padding:4px 8px;border-radius:999px;background:#e0a32b;color:#0e2a47;font:700 10px/1.2 system-ui;border:2px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,0.2);white-space:nowrap";
+              el.textContent = u.name.split(" ")[0];
+              const m = new gl.Marker({ element: el })
+                .setLngLat([u.lon, u.lat])
+                .addTo(map);
               markersRef.current.push(m as unknown as { remove: () => void });
             } catch {
               /* ignore */
             }
           }
-          await new Promise<void>((r) => {
-            timers.push(window.setTimeout(() => r(), 500));
-          });
+
+          await new Promise<void>((r) => setTimeout(r, 700));
         }
 
-        await new Promise<void>((r) => {
-          timers.push(window.setTimeout(() => r(), 900));
-        });
+        await new Promise<void>((r) => setTimeout(r, 1500));
       }
 
       if (!cancelled) {
         setDone(true);
         setSt(
           revealed.size
-            ? `Done — ${revealed.size} on the live network`
-            : "Done — no other network users in range yet",
+            ? `Scan complete — ${revealed.size} on the live network`
+            : "Scan complete — no other network users in range yet",
         );
       }
     }
@@ -952,7 +848,6 @@ export function RadarScreen() {
     void run();
     return () => {
       cancelled = true;
-      timers.forEach(clearTimeout);
       markersRef.current.forEach((m) => {
         try {
           m.remove();
@@ -978,9 +873,7 @@ export function RadarScreen() {
             <ChevronLeft />
           </IconBtn>
           <div className="text-center">
-            <div className="text-[10px] font-extrabold tracking-[0.12em] text-mut uppercase">
-              Network map
-            </div>
+            <div className="text-[10px] font-extrabold tracking-[0.12em] text-mut uppercase">Find nearby</div>
             <div className="text-xs font-bold text-navy">
               {rangeKm < 1 ? `${Math.round(rangeKm * 1000)} m radius` : `${rangeKm} km radius`}
             </div>
@@ -993,19 +886,19 @@ export function RadarScreen() {
       </div>
 
       <div className="relative mx-3 min-h-[42vh] flex-1 overflow-hidden rounded-lg border border-line shadow-[var(--shadow-lift)]">
-        <div ref={mapRef} className="absolute inset-0 z-0 bg-[#dbe4ee]" />
+        <div ref={mapRef} className="absolute inset-0 bg-[#dbe4ee]" />
         {!mapReady ? (
-          <div className="absolute inset-0 z-[1] grid place-items-center text-sm font-bold text-mut">
-            Starting map…
-          </div>
+          <div className="absolute inset-0 grid place-items-center text-sm font-bold text-mut">Loading map…</div>
         ) : null}
-        <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(circle_at_center,rgba(15,118,110,0.08),transparent_55%)]" />
+        {/* soft transmission pulse — not a radar dish */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(15,118,110,0.12),transparent_55%)]" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-teal/30 animate-ping opacity-40" />
       </div>
 
       <div className="z-[2] max-h-[28vh] space-y-2 overflow-y-auto px-4 py-3">
         {found.length === 0 ? (
           <p className="text-center text-xs text-mut">
-            Expanding from your GPS. Real network users only appear when the range reaches them.
+            Expanding from your position. People only appear when the map reaches their distance.
           </p>
         ) : (
           found.map((f) => (
@@ -1049,7 +942,7 @@ export function OffersScreen() {
       />
       <Pad className="relative z-[2]">
         <Card className="bg-gradient-to-br from-navy to-navy-2 text-white">
-          <div className="text-xs text-white/70">Your bid</div>
+          <div className="text-xs text-white/70">My need</div>
           <div className="font-display text-lg font-extrabold">20kg tomatoes · Premium</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="rounded-[9px] bg-white/12 px-2 py-1 text-[11px] font-bold text-[#cfe0f2]">Chitungwiza</span>
@@ -1261,7 +1154,7 @@ export function OrderScreen() {
               s.toastMsg("Order placed");
             }
             s.set({ orderStep: 2 });
-            s.go("receipt");
+            s.go("status");
           }}
         >
           Place order
@@ -1291,13 +1184,13 @@ export function StatusScreen() {
         <Card>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Avatar src={PORTRAITS.john} alt="Trader" verified />
+              <Avatar src={s.profilePhoto || ""} alt="Trader" verified={!!s.completedTrades} />
               <div>
                 <div className="font-extrabold text-navy">Trader</div>
                 <div className="text-xs text-mut">Ready in ~30 min</div>
               </div>
             </div>
-            <Badge tone="gold">Trust 94</Badge>
+            <Badge tone="gold">Trust {s.trustScore || 0}</Badge>
           </div>
           <div className="my-3 h-px bg-line" />
           <div className="flex justify-between text-sm">
@@ -1366,7 +1259,7 @@ export function ReviewScreen() {
         title="Rate trade"
       />
       <Pad className="pt-6 text-center">
-        <Avatar src={PORTRAITS.john} alt="Trader" size="xl" />
+        <Avatar src={s.profilePhoto || ""} alt="Trader" size="xl" />
         <h1 className="font-display mt-3.5 text-[26px] font-extrabold text-navy">How was your trade?</h1>
         <p className="text-mut">Trader · VMB-004821</p>
         <div className="my-5 flex justify-center gap-1.5">
