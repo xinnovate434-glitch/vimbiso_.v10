@@ -13,7 +13,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install
+      - name: Install deps
         run: npm ci || npm install
 
       - name: Build FULL Vimbiso React UI
@@ -23,25 +23,23 @@ jobs:
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
-          VITE_AUTH_ENABLED: "true"
         run: |
           set -e
-          npx vite build --config vite.capacitor.config.ts
-          if [ -f dist/capacitor.html ]; then
-            mv dist/capacitor.html dist/index.html
+          npx vite build --config vite.capacitor.config.ts 2>&1 | tee /tmp/vite-build.log
+          if [ ! -f dist/capacitor.html ] && [ ! -f dist/index.html ]; then
+            echo "==== VITE LOG (last 80 lines) ===="
+            tail -80 /tmp/vite-build.log
+            exit 1
           fi
+          if [ -f dist/capacitor.html ]; then mv dist/capacitor.html dist/index.html; fi
           test -f dist/index.html
-          ls -la dist | head -25
           du -sh dist
-          # ensure images present
-          find dist -name 'bg-welcome.jpg' | head -3
           find dist -name '*.jpg' | wc -l
 
       - name: Capacitor Android
         run: |
-          set -e
           npm install -D @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6
-          printf '%s\n' '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"},"android":{"allowMixedContent":true}}' > capacitor.config.json
+          printf '%s\n' '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
           npx cap add android
           npx cap sync android
 

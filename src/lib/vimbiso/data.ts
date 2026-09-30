@@ -84,24 +84,12 @@ export type Offer = {
 export const OFFERS: Offer[] = [];
 
 export const NEAR: {
-  img: string;
-  name: string;
-  trust: number;
-  rating: number;
-  dist: string;
-  stock: string;
+  img: string; name: string; trust: number; rating: number; dist: string; stock: string;
 }[] = [];
 
 export const JOBS: {
-  id: number;
-  item: string;
-  from: string;
-  to: string;
-  dist: string;
-  pay: number;
-  buyerTrust: number;
-  traderTrust: number;
-  eta: string;
+  id: number; item: string; from: string; to: string; dist: string;
+  pay: number; buyerTrust: number; traderTrust: number; eta: string;
 }[] = [];
 
 export const TICKER: string[] = [];
