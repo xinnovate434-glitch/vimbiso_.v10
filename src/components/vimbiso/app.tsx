@@ -14,7 +14,6 @@ import {
   Handshake,
   X,
 } from "lucide-react";
-import { PORTRAITS } from "@/lib/vimbiso/data";
 import { HIDE_NAV, useVimbiso, type Screen } from "@/lib/vimbiso/store";
 import { cn } from "@/lib/utils";
 import { Btn } from "./primitives";
@@ -278,80 +277,99 @@ function VoiceOverlay() {
 
 function PoolSheet() {
   const s = useVimbiso();
-  const pct = Math.min(100, 25 + (s.poolJoined - 3) * 18);
-  const price = (15 - (s.poolJoined - 3) * 0.8).toFixed(2);
-  const faces = [PORTRAITS.rudo, PORTRAITS.farai, PORTRAITS.chipo, PORTRAITS.john, PORTRAITS.mary, PORTRAITS.tinashe, PORTRAITS.tendai];
+  const [invited, setInvited] = useState(0);
+  const myQty = s.bidItems.reduce((a, i) => a + i.qty, 0) || 20;
+  const myPrice = s.bidItems[0]?.price ?? 15;
+  // Real pool: only you until real neighbours join via invite (Supabase later)
+  const neighbours = invited; // no fake people
+  const totalKg = myQty + neighbours * 5;
+  const discount = neighbours === 0 ? 0 : Math.min(0.25, neighbours * 0.03);
+  const newPrice = +(myPrice * (1 - discount)).toFixed(2);
+  const pct = neighbours === 0 ? 0 : Math.min(99, 40 + neighbours * 10);
 
   return (
     <div
-      className="fixed inset-0 z-[85] flex items-end justify-center bg-navy-3/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-navy-3/50 px-3 pb-3 backdrop-blur-[2px]"
       onClick={(e) => {
         if (e.target === e.currentTarget) s.set({ poolOpen: false });
       }}
     >
-      <div className="w-full max-w-[430px] rounded-t-[28px] bg-white px-5 pt-6 pb-8">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-xl font-extrabold text-navy">Pool this bid</h2>
-          <button type="button" className="text-xl" onClick={() => s.set({ poolOpen: false })}>
+      <div className="w-full max-w-[400px] rounded-t-[22px] bg-white p-5 shadow-[var(--shadow-lift)]">
+        <div className="mb-2 flex items-start justify-between">
+          <div>
+            <h2 className="font-display text-xl font-extrabold text-navy">Pool this bid</h2>
+            <p className="mt-1 text-xs text-mut">
+              Invite real neighbours to buy together. Bigger order = better price — mukando on Vimbiso.
+            </p>
+          </div>
+          <button type="button" className="text-xl text-mut" onClick={() => s.set({ poolOpen: false })}>
             ×
           </button>
         </div>
-        <p className="mt-1.5 text-sm text-mut">
-          Invite neighbours to buy together. Bigger order = lower price. This is how mukando already works — now on Vimbiso.
-        </p>
-        <div
-          className="relative mx-auto mt-4 grid h-[120px] w-[120px] place-items-center rounded-full"
-          style={{ background: `conic-gradient(var(--color-teal) ${pct}%, rgb(14 42 71 / 0.08) 0)` }}
-        >
-          <div className="absolute inset-2.5 rounded-full bg-white" />
-          <div className="relative font-display text-[26px] font-extrabold text-navy">{pct}%</div>
+
+        <div className="mx-auto my-5 grid h-28 w-28 place-items-center">
+          <div
+            className="relative grid h-full w-full place-items-center rounded-full"
+            style={{
+              background: `conic-gradient(#0f766e ${pct}%, #e8eef5 0)`,
+            }}
+          >
+            <div className="absolute inset-[10px] grid place-items-center rounded-full bg-white">
+              <span className="font-display text-2xl font-extrabold text-navy">{pct}%</span>
+            </div>
+          </div>
         </div>
-        <div className="my-3 flex justify-center">
-          {faces.slice(0, s.poolJoined).map((src, i) => (
-            <img
-              key={i}
-              src={src}
-              alt=""
-              className="-ml-2.5 h-[38px] w-[38px] rounded-full border-2 border-white object-cover first:ml-0"
-            />
-          ))}
-        </div>
-        <div className="grid gap-2 text-sm">
+
+        {neighbours === 0 ? (
+          <p className="mb-3 text-center text-xs text-mut">
+            No neighbours in this pool yet. Share your invite — only real people who join appear here.
+          </p>
+        ) : (
+          <p className="mb-3 text-center text-xs font-bold text-teal">{neighbours} real neighbour(s) joined</p>
+        )}
+
+        <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-mut">You</span>
-            <b>20kg @ $15.00</b>
+            <span className="font-bold text-navy">
+              {myQty}kg @ ${myPrice.toFixed(2)}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-mut">Neighbours joined</span>
-            <b>{s.poolJoined - 1}</b>
+            <span className="font-bold text-navy">{neighbours}</span>
           </div>
-          <div className="h-px bg-line" />
-          <div className="flex justify-between">
-            <span className="font-extrabold text-navy">New price / kg</span>
-            <b className="font-display text-xl text-ok">${price}</b>
+          <div className="flex justify-between border-t border-line pt-2">
+            <span className="font-bold text-navy">Pooled price / kg</span>
+            <span className="font-extrabold text-ok">${newPrice.toFixed(2)}</span>
           </div>
         </div>
-        <Btn
-          variant="teal"
-          className="mt-4"
-          onClick={() => {
-            if (s.poolJoined < 7) {
-              s.set({ poolJoined: s.poolJoined + 1 });
-              s.toastMsg("Another neighbour joined");
-            } else s.toastMsg("Pool is full — great bulk price");
-          }}
-        >
-          Invite more neighbours
-        </Btn>
-        <Btn
-          className="mt-2"
-          onClick={() => {
-            s.set({ poolOpen: false });
-            s.go("radar");
-          }}
-        >
-          Find traders at pooled price
-        </Btn>
+
+        <div className="mt-4 grid gap-2">
+          <Btn
+            variant="teal"
+            onClick={() => {
+              // Placeholder invite count until SMS/share + Supabase pool members
+              const link = `https://vimbiso.network/pool?u=${encodeURIComponent(s.vimbisoId || s.userId || "guest")}`;
+              if (navigator.share) {
+                void navigator.share({ title: "Join my Vimbiso pool", text: "Buy together on Vimbiso", url: link }).catch(() => {});
+              }
+              s.toastMsg("Invite ready — only real joins count");
+              setInvited((n) => n); // do not invent neighbours
+            }}
+          >
+            Share invite to neighbours
+          </Btn>
+          <Btn
+            variant="navy"
+            onClick={() => {
+              s.set({ poolOpen: false });
+              s.go("radar");
+            }}
+          >
+            Find traders {neighbours ? "at pooled price" : "for this bid"}
+          </Btn>
+        </div>
       </div>
     </div>
   );
