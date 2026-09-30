@@ -32,8 +32,9 @@ jobs:
             mv dist/capacitor.html dist/index.html
           fi
           test -f dist/index.html
+          mkdir -p dist/icons
+          cp -f public/icons/* dist/icons/ 2>/dev/null || true
           du -sh dist
-          find dist -name '*.jpg' | wc -l || true
 
       - name: Capacitor Android
         run: |
@@ -43,31 +44,65 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Android permissions
+      - name: Android permissions (safe)
         run: |
           python3 << 'PY'
           from pathlib import Path
+          import re
+
           p = Path("android/app/src/main/AndroidManifest.xml")
           if not p.exists():
+              print("no manifest — skip")
               raise SystemExit(0)
+
           t = p.read_text()
           perms = [
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_NETWORK_STATE",
               "android.permission.RECORD_AUDIO",
               "android.permission.ACCESS_FINE_LOCATION",
               "android.permission.ACCESS_COARSE_LOCATION",
               "android.permission.POST_NOTIFICATIONS",
-              "android.permission.INTERNET",
+              "android.permission.MODIFY_AUDIO_SETTINGS",
           ]
-          for perm in perms:
-              if perm in t:
-                  continue
-              tag = f'    <uses-permission android:name="{perm}" />\n'
-              i = t.find(">")
-              if i > 0:
-                  t = t[: i + 1] + "\n" + tag + t[i + 1 :]
+
+          # Only add missing permissions; insert ONLY after full <manifest ...> tag
+          m = re.search(r"<manifest\b[^>]*>", t, flags=re.DOTALL)
+          if not m:
+              print("manifest tag not found — skip perms")
+              raise SystemExit(0)
+
+          missing = [perm for perm in perms if perm not in t]
+          if not missing:
+              print("all permissions already present")
+              raise SystemExit(0)
+
+          block = "\n".join(
+              f'    <uses-permission android:name="{perm}" />' for perm in missing
+          )
+          t = t[: m.end()] + "\n" + block + "\n" + t[m.end() :]
           p.write_text(t)
-          print("permissions ok")
+
+          # Sanity: application tag still present and manifest well-formed enough
+          if "<application" not in t or t.count("<manifest") != 1:
+              raise SystemExit("manifest looks broken after patch")
+          print("added:", ", ".join(missing))
           PY
+
+      - name: Apply app icon
+        run: |
+          set -e
+          if [ -d android-icons ]; then
+            for dens in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              src="android-icons/mipmap-$dens"
+              dst="android/app/src/main/res/mipmap-$dens"
+              mkdir -p "$dst"
+              if [ -d "$src" ]; then
+                cp -f "$src"/*.png "$dst/" || true
+              fi
+            done
+            echo "App icons applied"
+          fi
 
       - name: Setup Java
         uses: actions/setup-java@v4
