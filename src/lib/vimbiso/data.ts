@@ -128,7 +128,7 @@ export const DICT = {
     getstarted: "Get started",
     signin: "I already have an account",
     ussd: "No smartphone? Use USSD *123#",
-    hello: "Good afternoon, Tendai",
+    hello: "Welcome",
     need: "What do you need?",
     buildbid: "Build bid",
     buildbid2: "Build a bid",

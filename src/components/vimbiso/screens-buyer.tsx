@@ -55,8 +55,16 @@ export function HomeScreen() {
   const [heat, setHeat] = useState<{ id: string; name: string; intensity: number; traders: number }[]>([]);
 
   useEffect(() => {
-    const city = s.city || "Harare";
-    fetchWeather(city).then(setWeather);
+    (async () => {
+      const { getPhoneLocation } = await import("@/lib/vimbiso/geo");
+      const pos = await getPhoneLocation();
+      if (pos) {
+        const { fetchWeatherByCoords } = await import("@/lib/vimbiso/weather");
+        const w = await fetchWeatherByCoords(pos.lat, pos.lon);
+        if (w) { setWeather(w); return; }
+      }
+      if (s.city) fetchWeather(s.city).then(setWeather);
+    })();
     import("@/lib/vimbiso/heatmap").then(({ buildHeatCells }) => {
       buildHeatCells().then(setHeat).catch(() => {});
     });
@@ -99,7 +107,7 @@ export function HomeScreen() {
           </div>
         </div>
         <div className="px-[18px] pt-4 pb-5">
-          <p className="text-[13px] font-semibold text-white/80">{t.hello}</p>
+          <p className="text-[13px] font-semibold text-white/80">{s.name ? `Hi, ${s.name}` : t.hello}</p>
           <h1 className="font-display mt-1 text-[28px] font-extrabold text-white">{t.need}</h1>
           <div className="mt-4 flex items-center gap-2.5 rounded-[18px] bg-white py-1.5 pr-1.5 pl-4 shadow-[var(--shadow-lift)]">
             <Search className="size-5 shrink-0 text-mut" />

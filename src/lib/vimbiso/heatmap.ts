@@ -39,7 +39,7 @@ export async function buildHeatCells(): Promise<HeatCell[]> {
     const key = cell.name.toLowerCase();
     const traders = byCity[key] || 0;
     // slight baseline so map is never empty
-    const intensity = Math.min(1, 0.15 + traders / max);
+    const intensity = traders === 0 ? 0 : Math.min(1, traders / max);
     return { ...cell, intensity, traders };
   });
 }
@@ -49,7 +49,7 @@ export function mapboxStaticUrl(lat: number, lng: number, zoom = 10): string | n
   if (!token) return null;
   // Simple static map; interactive map needs mapbox-gl in the client
   return (
-    `https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/` +
+    `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/` +
     `${lng},${lat},${zoom},0/600x320@2x?access_token=${token}`
   );
 }

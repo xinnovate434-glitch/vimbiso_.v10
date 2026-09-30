@@ -708,7 +708,7 @@ export function ProfileScreen() {
           onClick={async () => {
             const { enablePushNotifications } = await import("@/lib/vimbiso/push");
             const r = await enablePushNotifications(s.userId);
-            if (r.ok) s.toastMsg("Notifications on — alerts when you're offline");
+            if (r.ok) s.toastMsg("Notifications enabled for new bids and offers");
             else s.toastMsg(r.error || "Could not enable notifications");
           }}
         >
