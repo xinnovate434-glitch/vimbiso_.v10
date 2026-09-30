@@ -50,6 +50,11 @@ import {
   ProfileScreen,
   TradeScreen,
 } from "./screens-work";
+import {
+  AiAssistScreen,
+  MessagesScreen,
+  ReceiptScreen,
+} from "./screens-chat";
 
 const SCREENS: Record<Screen, () => ReactNode> = {
   splash: () => <SplashScreen />,
@@ -79,19 +84,22 @@ const SCREENS: Record<Screen, () => ReactNode> = {
   delJob: () => <DelJobScreen />,
   profile: () => <ProfileScreen />,
   admin: () => <AdminScreen />,
+  messages: () => <MessagesScreen />,
+  ai: () => <AiAssistScreen />,
+  receipt: () => <ReceiptScreen />,
 };
 
 const NAV = {
   buyer: [
     ["home", "Home", Home],
     ["bid", "Bid", ShoppingBag],
-    ["status", "Orders", Package],
+    ["messages", "Messages", Inbox],
     ["profile", "Profile", User],
   ],
   trader: [
     ["trade", "Trade", Zap],
-    ["incoming", "Requests", Inbox],
-    ["status", "Orders", Package],
+    ["incoming", "Requests", Handshake],
+    ["messages", "Messages", Inbox],
     ["profile", "Profile", User],
   ],
   delivery: [
@@ -169,10 +177,10 @@ function FabMenu({ role }: { role: string }) {
   const items =
     role === "trader"
       ? [
+          { id: "ai", label: "Talk to AI", sub: "Always available", Icon: Mic, run: () => go("ai") },
           { id: "incoming", label: "Buyer requests", sub: "Respond live", Icon: Inbox, run: () => go("incoming") },
-          { id: "map", label: "Network map", sub: "Expand by distance", Icon: Map, run: () => go("radar") },
-          { id: "offer", label: "Make offer", sub: "Quote a buyer", Icon: Handshake, run: () => go("makeoffer") },
-          { id: "trade", label: "Go online", sub: "Trader desk", Icon: Zap, run: () => go("trade") },
+          { id: "msg", label: "Messages", sub: "Customers", Icon: Handshake, run: () => go("messages") },
+          { id: "offer", label: "Make offer", sub: "Quote a buyer", Icon: Zap, run: () => go("makeoffer") },
         ]
       : role === "delivery"
         ? [
@@ -182,10 +190,10 @@ function FabMenu({ role }: { role: string }) {
             { id: "hist", label: "History", sub: "Past runs", Icon: Package, run: () => go("status") },
           ]
         : [
+            { id: "ai", label: "Talk to AI", sub: "Always available", Icon: Mic, run: () => go("ai") },
             { id: "bid", label: "Build a bid", sub: "Say what you need", Icon: ShoppingBag, run: () => go("bid") },
             { id: "map", label: "Network map", sub: "Find people nearby", Icon: Map, run: () => go("radar") },
-            { id: "voice", label: "Voice order", sub: "Speak your need", Icon: Mic, run: () => set({ voiceOn: true }) },
-            { id: "offer", label: "Live offers", sub: "Traders responding", Icon: Handshake, run: () => go("offers") },
+            { id: "msg", label: "Messages", sub: "Friends & customers", Icon: Inbox, run: () => go("messages") },
           ];
 
   return (

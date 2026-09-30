@@ -29,7 +29,10 @@ export type Screen =
   | "delJobs"
   | "delJob"
   | "profile"
-  | "admin";
+  | "admin"
+  | "messages"
+  | "ai"
+  | "receipt";
 
 export type BidItem = {
   name: string;
@@ -125,6 +128,7 @@ export const HIDE_NAV: Screen[] = [
   "delRadar",
   "admin",
   "ussd",
+  "receipt",
 ];
 
 function homeFor(role: Role): Screen {

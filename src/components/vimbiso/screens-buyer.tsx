@@ -1261,7 +1261,7 @@ export function OrderScreen() {
               s.toastMsg("Order placed");
             }
             s.set({ orderStep: 2 });
-            s.go("status");
+            s.go("receipt");
           }}
         >
           Place order
