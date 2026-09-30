@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   Mic,
@@ -713,21 +713,35 @@ export function BasketScreen() {
         </Btn>
       </Pad>
     </section>
-  );
-}
-
 export function RadarScreen() {
   const s = useVimbiso();
-  const [km, setKm] = useState(0.1);
-  const [st, setSt] = useState("Getting your location…");
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapObj = useRef<{
+    flyTo?: (o: Record<string, unknown>) => void;
+    easeTo?: (o: Record<string, unknown>) => void;
+    remove?: () => void;
+    resize?: () => void;
+    getZoom?: () => number;
+  } | null>(null);
+  const markersRef = useRef<{ remove: () => void }[]>([]);
+  const [st, setSt] = useState("Finding your position…");
+  const [rangeKm, setRangeKm] = useState(0.15);
   const [found, setFound] = useState<
-    { id: string; n: string; distKm: number; a: number; r: number; lk: boolean }[]
+    { id: string; name: string; distKm: number; role?: string; city?: string }[]
   >([]);
   const [done, setDone] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const timers: number[] = [];
+    let map: {
+      flyTo?: (o: Record<string, unknown>) => void;
+      easeTo?: (o: Record<string, unknown>) => void;
+      remove?: () => void;
+      resize?: () => void;
+      on?: (e: string, cb: () => void) => void;
+      addControl?: (c: unknown, pos?: string) => void;
+    } | null = null;
 
     function haversineKm(
       a: { lat: number; lon: number },
@@ -744,7 +758,27 @@ export function RadarScreen() {
       return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
     }
 
+    function loadMapbox(): Promise<void> {
+      return new Promise((resolve, reject) => {
+        const w = window as unknown as { mapboxgl?: unknown };
+        if (w.mapboxgl) {
+          resolve();
+          return;
+        }
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css";
+        document.head.appendChild(link);
+        const script = document.createElement("script");
+        script.src = "https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Mapbox failed"));
+        document.body.appendChild(script);
+      });
+    }
+
     async function run() {
+      // GPS
       let origin = { lat: -17.8292, lon: 31.0522 };
       try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -752,77 +786,210 @@ export function RadarScreen() {
           else
             navigator.geolocation.getCurrentPosition(resolve, reject, {
               enableHighAccuracy: true,
-              timeout: 12000,
+              timeout: 15000,
             });
         });
         origin = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        if (!cancelled) setSt("Location locked — scanning network…");
+        if (!cancelled) setSt("You are here — expanding the network map…");
       } catch {
-        if (!cancelled) setSt("Location unavailable — scanning by city…");
+        if (!cancelled) setSt("Using approximate area — expanding slowly…");
       }
 
-      type T = {
+      // Real network users
+      type U = {
         id: string;
         name: string;
         city: string;
         vimbiso_id: string | null;
+        roles?: string[];
         lat?: number | null;
         lon?: number | null;
       };
-      let traders: T[] = [];
+      let users: U[] = [];
       try {
         const { listOnlineTraders } = await import("@/lib/vimbiso/api");
         const { data } = await listOnlineTraders();
-        traders = (data || []).filter((u) => u.id !== s.userId);
+        users = (data || []).filter((u) => u.id !== s.userId);
       } catch {
-        traders = [];
+        users = [];
       }
 
-      const withDist = traders.map((t, i) => {
-        let distKm = 50;
-        if (typeof t.lat === "number" && typeof t.lon === "number") {
-          distKm = haversineKm(origin, { lat: t.lat, lon: t.lon });
-        } else if (t.city && s.city && t.city.toLowerCase() === s.city.toLowerCase()) {
-          distKm = 0.3 + ((i * 17) % 37) / 10;
+      const withDist = users.map((u, i) => {
+        let distKm = 40;
+        let lat = origin.lat;
+        let lon = origin.lon;
+        if (typeof u.lat === "number" && typeof u.lon === "number") {
+          lat = u.lat;
+          lon = u.lon;
+          distKm = haversineKm(origin, { lat, lon });
+        } else if (u.city && s.city && u.city.toLowerCase() === s.city.toLowerCase()) {
+          // same city, no GPS on profile yet — place in a small ring so map can show them
+          const ang = (i * 47 * Math.PI) / 180;
+          distKm = 0.4 + ((i * 11) % 25) / 10;
+          lat = origin.lat + (distKm / 111) * Math.cos(ang);
+          lon = origin.lon + (distKm / (111 * Math.cos((origin.lat * Math.PI) / 180))) * Math.sin(ang);
         } else {
-          distKm = 15 + ((i * 13) % 40);
+          distKm = 12 + ((i * 17) % 30);
+          const ang = (i * 33 * Math.PI) / 180;
+          lat = origin.lat + (distKm / 111) * Math.cos(ang);
+          lon = origin.lon + (distKm / (111 * Math.cos((origin.lat * Math.PI) / 180))) * Math.sin(ang);
         }
         return {
-          id: t.id,
-          n: t.name || t.vimbiso_id || "Trader",
+          id: u.id,
+          name: u.name || u.vimbiso_id || "Network user",
           distKm,
-          a: (i * 47) % 360,
-          r: Math.min(0.85, 0.25 + distKm / 20),
-          lk: false,
+          lat,
+          lon,
+          city: u.city,
+          role: Array.isArray(u.roles) ? u.roles[0] : "trader",
         };
       });
 
-      const rings = [0.1, 0.2, 0.3, 0.5, 0.8, 1, 1.5, 2, 3, 5, 8, 12, 15, 20];
+      // Map
+      try {
+        const { config } = await import("@/lib/vimbiso/config");
+        const token = config.mapbox.token;
+        if (!token || !mapRef.current) {
+          if (!cancelled) setSt("Map token missing — list-only scan");
+        } else {
+          await loadMapbox();
+          if (cancelled) return;
+          const gl = (window as unknown as {
+            mapboxgl: {
+              accessToken: string;
+              Map: new (o: Record<string, unknown>) => typeof map extends infer M ? M : never;
+              Marker: new (o?: Record<string, unknown>) => {
+                setLngLat: (ll: [number, number]) => {
+                  setPopup?: (p: unknown) => { addTo: (m: unknown) => unknown };
+                  addTo: (m: unknown) => { remove: () => void };
+                };
+                remove: () => void;
+              };
+              Popup: new (o?: Record<string, unknown>) => {
+                setHTML: (h: string) => {
+                  setLngLat: (ll: [number, number]) => { addTo: (m: unknown) => unknown };
+                };
+              };
+              NavigationControl: new () => unknown;
+            };
+          }).mapboxgl;
+
+          gl.accessToken = token;
+          map = new gl.Map({
+            container: mapRef.current,
+            style: "mapbox://styles/mapbox/streets-v12",
+            center: [origin.lon, origin.lat],
+            zoom: 15.2,
+            pitch: 45,
+            bearing: -12,
+            attributionControl: false,
+          }) as typeof map;
+          mapObj.current = map;
+          map.addControl?.(new gl.NavigationControl(), "bottom-right");
+          map.on?.("load", () => {
+            map?.resize?.();
+            if (!cancelled) setMapReady(true);
+          });
+
+          // You marker
+          const you = document.createElement("div");
+          you.style.cssText =
+            "width:18px;height:18px;border-radius:999px;background:#0f766e;border:3px solid #fff;box-shadow:0 0 0 6px rgba(15,118,110,0.25)";
+          const youM = new gl.Marker({ element: you }).setLngLat([origin.lon, origin.lat]).addTo(map);
+          markersRef.current.push(youM as unknown as { remove: () => void });
+        }
+      } catch {
+        if (!cancelled) setSt("Map unavailable — still scanning by distance");
+      }
+
+      // Slow expand: rings in meters then km — not a classic radar sweep
+      const rings = [0.15, 0.3, 0.5, 0.8, 1.2, 2, 3.5, 5, 8, 12, 18, 25];
+      // zoom roughly maps range: close = high zoom
+      const zoomFor = (km: number) => Math.max(9.5, 15.4 - Math.log2(1 + km * 3.2));
+
       const revealed = new Set<string>();
+      const gl = (window as unknown as {
+        mapboxgl?: {
+          Marker: new (o?: Record<string, unknown>) => {
+            setLngLat: (ll: [number, number]) => {
+              addTo: (m: unknown) => { remove: () => void };
+            };
+            remove: () => void;
+          };
+          Popup: new (o?: Record<string, unknown>) => {
+            setHTML: (h: string) => unknown;
+            setLngLat?: (ll: [number, number]) => { addTo: (m: unknown) => unknown };
+          };
+        };
+      }).mapboxgl;
 
       for (const ring of rings) {
         if (cancelled) return;
-        setKm(ring);
-        setSt(ring < 1 ? `Scanning ${Math.round(ring * 1000)} m…` : `Scanning ${ring} km…`);
-        for (const t of withDist.filter((x) => x.distKm <= ring && !revealed.has(x.id))) {
-          revealed.add(t.id);
-          setFound((cur) => (cur.some((x) => x.id === t.id) ? cur : [...cur, { ...t, lk: false }]));
-          await new Promise<void>((r) => {
-            timers.push(window.setTimeout(() => r(), 280));
+        setRangeKm(ring);
+        const label =
+          ring < 1
+            ? `Expanding to ${Math.round(ring * 1000)} m…`
+            : `Expanding to ${ring} km…`;
+        setSt(label);
+
+        // Smooth map zoom-out (slow)
+        try {
+          map?.easeTo?.({
+            center: [origin.lon, origin.lat],
+            zoom: zoomFor(ring),
+            duration: 1600,
+            pitch: ring > 5 ? 30 : 45,
           });
-          setFound((cur) => cur.map((x) => (x.id === t.id ? { ...x, lk: true } : x)));
+        } catch {
+          /* ignore */
         }
-        await new Promise<void>((r) => {
-          timers.push(window.setTimeout(() => r(), 450));
-        });
+
+        // Reveal people only when range reaches them
+        for (const u of withDist.filter((x) => x.distKm <= ring && !revealed.has(x.id))) {
+          revealed.add(u.id);
+          setFound((cur) =>
+            cur.some((c) => c.id === u.id)
+              ? cur
+              : [
+                  ...cur,
+                  {
+                    id: u.id,
+                    name: u.name,
+                    distKm: u.distKm,
+                    role: u.role,
+                    city: u.city,
+                  },
+                ],
+          );
+          setSt(`${u.name} · ${u.distKm < 1 ? Math.round(u.distKm * 1000) + " m" : u.distKm.toFixed(1) + " km"} away`);
+
+          if (map && gl) {
+            try {
+              const el = document.createElement("div");
+              el.style.cssText =
+                "min-width:8px;padding:4px 8px;border-radius:999px;background:#e0a32b;color:#0e2a47;font:700 10px/1.2 system-ui;border:2px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,0.2);white-space:nowrap";
+              el.textContent = u.name.split(" ")[0];
+              const m = new gl.Marker({ element: el })
+                .setLngLat([u.lon, u.lat])
+                .addTo(map);
+              markersRef.current.push(m as unknown as { remove: () => void });
+            } catch {
+              /* ignore */
+            }
+          }
+
+          await new Promise<void>((r) => setTimeout(r, 700));
+        }
+
+        await new Promise<void>((r) => setTimeout(r, 1500));
       }
 
       if (!cancelled) {
         setDone(true);
         setSt(
           revealed.size
-            ? `Scan complete — ${revealed.size} within range`
-            : "Scan complete — no network users in range yet",
+            ? `Scan complete — ${revealed.size} on the live network`
+            : "Scan complete — no other network users in range yet",
         );
       }
     }
@@ -830,69 +997,83 @@ export function RadarScreen() {
     void run();
     return () => {
       cancelled = true;
-      timers.forEach(clearTimeout);
+      markersRef.current.forEach((m) => {
+        try {
+          m.remove();
+        } catch {
+          /* ignore */
+        }
+      });
+      markersRef.current = [];
+      try {
+        mapObj.current?.remove?.();
+      } catch {
+        /* ignore */
+      }
+      mapObj.current = null;
     };
   }, [s.userId, s.city]);
 
   return (
-    <section className="vn-screen p-0">
-      <div className="vn-radar">
-        <div className="vn-radar-map">
-          <img src={IMG.radar} alt="Scanning the live network" />
+    <section className="vn-screen flex flex-col bg-[#eef2f6] p-0">
+      <div className="relative z-[2] px-4 pt-[max(env(safe-area-inset-top),14px)] pb-2">
+        <div className="flex items-center justify-between">
+          <IconBtn onClick={() => s.go("home")}>
+            <ChevronLeft />
+          </IconBtn>
+          <div className="text-center">
+            <div className="text-[10px] font-extrabold tracking-[0.12em] text-mut uppercase">Network map</div>
+            <div className="text-xs font-bold text-navy">
+              {rangeKm < 1 ? `${Math.round(rangeKm * 1000)} m radius` : `${rangeKm} km radius`}
+            </div>
+          </div>
+          <Badge tone={done ? "ok" : "live"}>{done ? "Done" : "Live"}</Badge>
         </div>
-        <div className="vn-radar-grid" />
-        <div className="absolute top-[max(env(safe-area-inset-top),18px)] right-0 left-0 z-[6] px-[18px] text-center">
-          <div className="text-xs font-semibold text-white/70">
-            {s.city || "Your area"} · real network only
-          </div>
-          <div className="font-display mt-1 text-[20px] font-extrabold text-white">{st}</div>
-        </div>
-        <div className="vn-dish">
-          <div className="vn-ring" />
-          <div className="vn-ring r2" />
-          <div className="vn-ring r3" />
-          <div className="vn-ring r4" />
-          <div className="vn-pulse" />
-          <div className="vn-pulse p2" />
-          <div className="vn-pulse p3" />
-          <div className="vn-cross absolute inset-0" />
-          <div className="vn-sweep" />
-          <div
-            className="absolute top-1/2 left-1/2 z-[3] text-[9px] font-bold text-teal-2"
-            style={{ transform: `translate(-50%, -50%) scale(${0.55 + Math.min(km, 12) / 18})` }}
-          >
-            {km < 1 ? `${Math.round(km * 1000)} m` : `${km} km`}
-          </div>
-          <div className="vn-center" />
-          {found.map((f) => {
-            const x = 50 + Math.cos((f.a * Math.PI) / 180) * f.r * 46;
-            const y = 50 + Math.sin((f.a * Math.PI) / 180) * f.r * 46;
-            return (
-              <div key={f.id} className={cn("vn-blip in", f.lk && "lk")} style={{ left: `${x}%`, top: `${y}%` }}>
-                <span>
-                  {f.n} · {f.distKm < 1 ? `${Math.round(f.distKm * 1000)}m` : `${f.distKm.toFixed(1)}km`}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="absolute right-0 bottom-8 left-0 z-[6] px-6 text-center">
-          <div className="font-display text-[28px] font-extrabold text-gold-2">
-            {found.filter((f) => f.lk).length} found
-          </div>
-          <div className="mt-0.5 text-xs text-white/65">
-            Only shows when scan reaches their distance — no demo people
-          </div>
-          <button
-            type="button"
-            onClick={() => s.go(done ? "offers" : "home")}
-            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-bold text-white backdrop-blur-sm"
-          >
-            {done ? "Continue" : "Stop scan"}
-          </button>
+        <div className="mt-2 rounded-md bg-navy px-3 py-2.5 text-center text-[13px] font-semibold text-white shadow-[var(--shadow-card)]">
+          {st}
         </div>
       </div>
+
+      <div className="relative mx-3 min-h-[42vh] flex-1 overflow-hidden rounded-lg border border-line shadow-[var(--shadow-lift)]">
+        <div ref={mapRef} className="absolute inset-0 bg-[#dbe4ee]" />
+        {!mapReady ? (
+          <div className="absolute inset-0 grid place-items-center text-sm font-bold text-mut">Loading map…</div>
+        ) : null}
+        {/* soft transmission pulse — not a radar dish */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(15,118,110,0.12),transparent_55%)]" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-teal/30 animate-ping opacity-40" />
+      </div>
+
+      <div className="z-[2] max-h-[28vh] space-y-2 overflow-y-auto px-4 py-3">
+        {found.length === 0 ? (
+          <p className="text-center text-xs text-mut">
+            Expanding from your position. People only appear when the map reaches their distance.
+          </p>
+        ) : (
+          found.map((f) => (
+            <Card key={f.id} className="flex items-center justify-between py-2.5">
+              <div>
+                <div className="font-extrabold text-navy">{f.name}</div>
+                <div className="text-[11px] text-mut">
+                  {f.role || "network"} · {f.city || "nearby"} ·{" "}
+                  {f.distKm < 1 ? `${Math.round(f.distKm * 1000)} m` : `${f.distKm.toFixed(1)} km`}
+                </div>
+              </div>
+              <Badge tone="gold">Live</Badge>
+            </Card>
+          ))
+        )}
+      </div>
+
+      <div className="z-[2] px-4 pb-[max(env(safe-area-inset-bottom),16px)]">
+        <Btn variant="teal" onClick={() => s.go(done ? "offers" : "home")}>
+          {done ? "Continue" : "Stop expanding"}
+        </Btn>
+      </div>
     </section>
+  );
+}
+
   );
 }
 
