@@ -32,7 +32,12 @@ export type Screen =
   | "admin"
   | "messages"
   | "ai"
-  | "receipt";
+  | "receipt"
+  | "pricePulse"
+  | "safeMeet"
+  | "trust"
+  | "agentKit"
+  | "networkMore";
 
 export type BidItem = {
   name: string;
@@ -101,6 +106,8 @@ type State = {
   jobPhotos: { type: "pickup" | "drop"; time: string }[];
   search: string;
   safePoint: string;
+  /** user already saw first AI welcome */
+  firstAiDone: boolean;
 };
 
 type Actions = {
@@ -128,7 +135,14 @@ export const HIDE_NAV: Screen[] = [
   "delRadar",
   "admin",
   "ussd",
+  "ai",
+  "messages",
   "receipt",
+  "pricePulse",
+  "safeMeet",
+  "trust",
+  "agentKit",
+  "networkMore",
 ];
 
 function homeFor(role: Role): Screen {
@@ -242,8 +256,9 @@ export const useVimbiso = create<State & Actions>((set, get) => ({
   licence: "DL-0099281",
   delStep: 0,
   jobPhotos: [],
-  search: "20kg tomatoes",
+  search: "",
   safePoint: "Shell station Avondale",
+  firstAiDone: (typeof localStorage !== "undefined" && localStorage.getItem("vimbiso_first_ai") === "1"),
 
   go: (screen) => set({ screen }),
   goHome: () => set({ screen: homeFor(get().role) }),
@@ -254,7 +269,15 @@ export const useVimbiso = create<State & Actions>((set, get) => ({
       set({ toast: { id: Date.now(), message: "Account not approved yet" } });
       return;
     }
-    set({ role: resolved, screen: homeFor(resolved) });
+    const firstAi =
+      get().firstAiDone ||
+      (typeof localStorage !== "undefined" && localStorage.getItem("vimbiso_first_ai") === "1");
+    // First time into the app → open Vimbiso AI welcome (typewriter + Gemini)
+    set({
+      role: resolved,
+      screen: firstAi ? homeFor(resolved) : "ai",
+      firstAiDone: firstAi,
+    });
     saveSession({ ...get(), role: resolved });
   },
   setLang: (lang) => set({ lang }),

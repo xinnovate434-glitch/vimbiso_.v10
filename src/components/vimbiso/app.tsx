@@ -55,6 +55,13 @@ import {
   MessagesScreen,
   ReceiptScreen,
 } from "./screens-chat";
+import {
+  AgentKitScreen,
+  NetworkExtrasScreen,
+  PricePulseScreen,
+  SafeMeetScreen,
+  TrustScreen,
+} from "./screens-innovate";
 
 const SCREENS: Record<Screen, () => ReactNode> = {
   splash: () => <SplashScreen />,
@@ -87,6 +94,11 @@ const SCREENS: Record<Screen, () => ReactNode> = {
   messages: () => <MessagesScreen />,
   ai: () => <AiAssistScreen />,
   receipt: () => <ReceiptScreen />,
+  pricePulse: () => <PricePulseScreen />,
+  safeMeet: () => <SafeMeetScreen />,
+  trust: () => <TrustScreen />,
+  agentKit: () => <AgentKitScreen />,
+  networkMore: () => <NetworkExtrasScreen />,
 };
 
 const NAV = {
@@ -125,7 +137,17 @@ export function VimbisoApp() {
   }, [lite]);
 
   const Screen = SCREENS[screen];
-  const hideNav = HIDE_NAV.includes(screen) || role === "admin";
+  const hideNav =
+    HIDE_NAV.includes(screen) ||
+    role === "admin" ||
+    screen === "ai" ||
+    screen === "messages" ||
+    screen === "receipt" ||
+    screen === "pricePulse" ||
+    screen === "safeMeet" ||
+    screen === "trust" ||
+    screen === "agentKit" ||
+    screen === "networkMore";
   const nav = NAV[role === "trader" ? "trader" : role === "delivery" ? "delivery" : "buyer"];
 
   return (

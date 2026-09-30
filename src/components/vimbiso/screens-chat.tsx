@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Mic, Send, Bot, User as UserIcon, Radio } from "lucide-react";
+import { ChevronLeft, Mic, Send, Bot, User as UserIcon } from "lucide-react";
 import { useVimbiso } from "@/lib/vimbiso/store";
-import {
-  assistReply,
-  aiConfigured,
-  welcomeScript,
-} from "@/lib/vimbiso/ai";
-import {
-  canListen,
-  listenOnce,
-  speakAsync,
-  stopSpeaking,
-} from "@/lib/vimbiso/voice";
+import { assistReply, aiConfigured, welcomeScript } from "@/lib/vimbiso/ai";
+import { parseDeal, draftToBidItem } from "@/lib/vimbiso/deal-desk";
+import { canListen, listenOnce, speakAsync, stopSpeaking } from "@/lib/vimbiso/voice";
 import { Badge, Btn, Card, IconBtn, Pad, TopBar } from "./primitives";
 import { cn } from "@/lib/utils";
 
@@ -40,27 +32,19 @@ async function loadNetworkCtx(userId: string | null) {
   }
 }
 
-/** Vimby — text + live voice conversation (listen → Gemini → speak → listen) */
+/** Vimby — text-first chat. Mic optional. Nav hidden; composer always on screen. */
 export function AiAssistScreen() {
   const s = useVimbiso();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [typed, setTyped] = useState("");
-  const [welcomeDone, setWelcomeDone] = useState(s.firstAiDone);
-  const [live, setLive] = useState(false);
+  const [welcomeDone, setWelcomeDone] = useState(!!s.firstAiDone);
+  const [voiceReply, setVoiceReply] = useState(false);
   const [listening, setListening] = useState(false);
+  const [lastDraft, setLastDraft] = useState<ReturnType<typeof parseDeal>>(null);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const liveRef = useRef(false);
-  const busyRef = useRef(false);
-
-  useEffect(() => {
-    liveRef.current = live;
-  }, [live]);
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
 
   useEffect(() => {
     if (s.firstAiDone) {
@@ -70,10 +54,11 @@ export function AiAssistScreen() {
           id: "w0",
           from: "ai",
           name: "Vimby",
-          text: `Hi ${s.name || "there"} — I'm Vimby. Vimbiso Network only. Talk or type what you need to buy or sell.`,
+          text: `Hi ${s.name || "there"} — I'm Vimby. Type what you need to buy or sell on Vimbiso Network.`,
           at: "now",
         },
       ]);
+      window.setTimeout(() => inputRef.current?.focus(), 400);
       return;
     }
     const lines = welcomeScript(s.name || undefined, s.role);
@@ -81,7 +66,6 @@ export function AiAssistScreen() {
     let charIdx = 0;
     let current = "";
     let cancelled = false;
-
     const tick = () => {
       if (cancelled) return;
       if (lineIdx >= lines.length) {
@@ -102,7 +86,6 @@ export function AiAssistScreen() {
           },
         ]);
         setTyped("");
-        void speakAsync(lines.join(" "));
         window.setTimeout(() => inputRef.current?.focus(), 300);
         return;
       }
@@ -111,12 +94,12 @@ export function AiAssistScreen() {
         current += line[charIdx];
         charIdx += 1;
         setTyped(current);
-        window.setTimeout(tick, 16);
+        window.setTimeout(tick, 14);
       } else {
         current += " ";
         lineIdx += 1;
         charIdx = 0;
-        window.setTimeout(tick, 350);
+        window.setTimeout(tick, 280);
       }
     };
     tick();
@@ -129,11 +112,11 @@ export function AiAssistScreen() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, typed, busy, listening]);
+  }, [msgs, typed, busy]);
 
   async function runTurn(userText: string) {
     const t = userText.trim();
-    if (!t || busyRef.current) return;
+    if (!t || busy) return;
     setMsgs((m) => [
       ...m,
       {
@@ -163,63 +146,38 @@ export function AiAssistScreen() {
           name: "Vimby",
         },
       ]);
-      if (/banana|tomato|meal|maize|onion|potato|kg|need|want|buy|sell/i.test(t)) {
-        s.set({ search: t, bidItem: t });
+      const draft = parseDeal(t, s.city);
+      if (draft) {
+        setLastDraft(draft);
+        const item = draftToBidItem(draft);
+        s.set({
+          search: t,
+          bidItem: item.name,
+          bidQty: item.qty,
+          bidUnit: item.unit,
+          bidPrice: item.price || s.bidPrice,
+          city: draft.city || s.city,
+        });
       }
-      await speakAsync(reply);
+      if (voiceReply) await speakAsync(reply);
     } catch {
-      const fallback = "I only help with Vimbiso Network. Try again or Build a bid.";
+      const fallback =
+        "I'm here for Vimbiso Network only. Type what you want to buy or sell, or open Build a bid.";
       setMsgs((m) => [
         ...m,
         { id: String(Date.now() + 2), from: "ai", text: fallback, at: "now", name: "Vimby" },
       ]);
-      await speakAsync(fallback);
     } finally {
       setBusy(false);
+      window.setTimeout(() => inputRef.current?.focus(), 150);
     }
   }
 
-  /** Live talk: listen → reply aloud → listen again while live is on */
-  async function liveLoop() {
-    if (!canListen()) {
-      s.toastMsg("Mic not available — type to Vimby");
-      setLive(false);
-      return;
-    }
-    while (liveRef.current) {
-      try {
-        setListening(true);
-        const heard = await listenOnce("en-US", 12000);
-        setListening(false);
-        if (!liveRef.current) break;
-        await runTurn(heard);
-      } catch (e) {
-        setListening(false);
-        if (!liveRef.current) break;
-        // brief pause then listen again
-        await new Promise((r) => setTimeout(r, 600));
-      }
-    }
-    setListening(false);
-  }
-
-  function toggleLive() {
-    if (live) {
-      setLive(false);
-      liveRef.current = false;
-      stopSpeaking();
-      setListening(false);
-      return;
-    }
-    setLive(true);
-    liveRef.current = true;
-    void liveLoop();
-  }
-
-  async function pushToTalk() {
+  async function optionalMic() {
     if (busy || listening) return;
     if (!canListen()) {
-      s.toastMsg("Mic not available — type instead");
+      s.toastMsg("Type your message below — mic not required");
+      inputRef.current?.focus();
       return;
     }
     try {
@@ -229,24 +187,20 @@ export function AiAssistScreen() {
       await runTurn(heard);
     } catch (e) {
       setListening(false);
-      s.toastMsg(e instanceof Error ? e.message : "Voice failed");
+      s.toastMsg("Type below instead — mic not needed");
+      inputRef.current?.focus();
     }
   }
 
-  function sendText() {
-    const t = input.trim();
-    if (!t) return;
-    setInput("");
-    void runTurn(t);
-  }
-
   return (
-    <section className="vn-screen flex flex-col bg-[#f4f7fb]" style={{ paddingBottom: 0 }}>
+    <section
+      className="vn-screen flex flex-col bg-[#f4f7fb]"
+      style={{ position: "relative", height: "100%", maxHeight: "100%" }}
+    >
       <TopBar
         left={
           <IconBtn
             onClick={() => {
-              setLive(false);
               stopSpeaking();
               s.goHome();
             }}
@@ -256,61 +210,64 @@ export function AiAssistScreen() {
         }
         title="Vimby"
         right={
-          <Badge tone={live ? "live" : aiConfigured() ? "ok" : "live"}>
-            {live ? "Live talk" : aiConfigured() ? "Gemini" : "Guide"}
+          <Badge tone={aiConfigured() ? "ok" : "live"}>
+            {aiConfigured() ? "Online" : "Guide mode"}
           </Badge>
         }
       />
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4" style={{ paddingBottom: 12 }}>
-        <div className="py-2 text-center">
+      {/* Messages — leave room for fixed composer (~72px) */}
+      <div
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4"
+        style={{ paddingBottom: 8 }}
+      >
+        <div className="py-1 text-center">
           <div className="font-display text-lg font-extrabold tracking-tight text-navy">
             VIMBISO <span className="text-[#e0a32b]">NETWORK</span>
           </div>
-          <p className="mt-0.5 text-[11px] text-mut">Vimby · voice or text · trading only</p>
+          <p className="text-[11px] text-mut">Type to Vimby · trading help only</p>
         </div>
 
-        {/* Clean quick actions — not junk */}
-        {welcomeDone ? (
-          <div className="flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              onClick={toggleLive}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold",
-                live ? "bg-teal text-white" : "border border-line bg-white text-navy",
-              )}
-            >
-              <Radio className="size-3.5" />
-              {live ? "Stop live talk" : "Live talk with Vimby"}
-            </button>
-            <button
-              type="button"
-              onClick={() => s.go("bid")}
-              className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy"
-            >
-              Build a bid
-            </button>
-            <button
-              type="button"
-              onClick={() => s.go("radar")}
-              className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy"
-            >
-              Network map
-            </button>
-          </div>
-        ) : null}
-
-        {listening ? (
-          <div className="text-center text-xs font-bold text-teal">Vimby is listening… speak now</div>
-        ) : null}
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => s.go("bid")}
+            className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy"
+          >
+            Build a bid
+          </button>
+          <button
+            type="button"
+            onClick={() => s.go("radar")}
+            className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy"
+          >
+            Network map
+          </button>
+          <button
+            type="button"
+            onClick={() => s.go("networkMore")}
+            className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy"
+          >
+            Network tools
+          </button>
+          <button
+            type="button"
+            onClick={() => setVoiceReply((v) => !v)}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-xs font-bold",
+              voiceReply ? "bg-teal text-white" : "border border-line bg-white text-navy",
+            )}
+          >
+            {voiceReply ? "Voice replies on" : "Voice replies off"}
+          </button>
+        </div>
 
         {!welcomeDone && typed ? (
           <div className="flex justify-start gap-2">
             <span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-teal text-white">
               <Bot className="size-4" />
             </span>
-            <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-line bg-white px-3.5 py-2.5 text-sm text-navy shadow-sm">
+            <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-line bg-white px-3.5 py-2.5 text-sm text-navy shadow-sm">
               <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-teal">Vimby</div>
               {typed}
               <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-teal" />
@@ -330,44 +287,100 @@ export function AiAssistScreen() {
             ) : null}
             <div
               className={cn(
-                "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-snug",
+                "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-snug",
                 m.from === "me"
                   ? "rounded-br-md bg-navy text-white"
                   : "rounded-bl-md border border-line bg-white text-navy shadow-sm",
               )}
             >
               {m.name && m.from !== "me" ? (
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-teal">{m.name}</div>
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-teal">
+                  {m.name}
+                </div>
               ) : null}
               {m.text}
             </div>
           </div>
         ))}
-        {busy && !listening ? (
-          <div className="pl-10 text-xs text-mut">Vimby is thinking…</div>
+        {busy ? <div className="pl-10 text-xs text-mut">Vimby is thinking…</div> : null}
+        {lastDraft ? (
+          <div className="rounded-2xl border border-teal/30 bg-teal/5 p-3 text-sm">
+            <div className="text-[10px] font-bold uppercase tracking-wide text-teal">Vimby deal desk</div>
+            <div className="mt-1 font-extrabold text-navy">
+              {lastDraft.qty} {lastDraft.unit} {lastDraft.item}
+              {lastDraft.maxPrice != null ? ` · max $${lastDraft.maxPrice}` : ""}
+              {lastDraft.city ? ` · ${lastDraft.city}` : ""}
+            </div>
+            <p className="mt-1 text-[11px] text-mut">
+              Structured from your words — post to the live network (no fake traders).
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                className="rounded-full bg-teal px-3 py-1.5 text-xs font-bold text-white"
+                onClick={async () => {
+                  const item = draftToBidItem(lastDraft);
+                  const items = [...s.bidItems.filter((b) => b.name !== item.name), item];
+                  s.set({ bidItems: items, bidItem: item.name, bidQty: item.qty, bidUnit: item.unit, bidPrice: item.price });
+                  if (s.userId) {
+                    try {
+                      const { createBid } = await import("@/lib/vimbiso/api");
+                      await createBid({ buyerId: s.userId, items, city: lastDraft.city || s.city });
+                      s.toastMsg("Bid posted to Vimbiso Network");
+                    } catch {
+                      s.toastMsg("Bid saved — open Find traders");
+                    }
+                  }
+                  s.go("radar");
+                }}
+              >
+                Post live bid
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-navy"
+                onClick={() => s.go("bid")}
+              >
+                Edit bid
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {listening ? (
+          <div className="text-center text-xs font-bold text-teal">Listening… (optional)</div>
         ) : null}
         <div ref={endRef} />
       </div>
 
+      {/* ALWAYS visible text bar — fixed above any nav, high z-index */}
       <div
-        className="shrink-0 border-t border-line bg-white px-3 pt-2"
-        style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))", zIndex: 30 }}
+        className="shrink-0 border-t border-line bg-white shadow-[0_-4px_20px_rgba(14,42,71,0.08)]"
+        style={{
+          position: "sticky",
+          bottom: 0,
+          zIndex: 80,
+          paddingLeft: 12,
+          paddingRight: 12,
+          paddingTop: 10,
+          paddingBottom: "max(14px, env(safe-area-inset-bottom))",
+        }}
       >
         <form
           className="flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            sendText();
+            const t = input.trim();
+            if (!t) return;
+            setInput("");
+            void runTurn(t);
           }}
         >
           <button
             type="button"
-            className={cn(
-              "grid h-12 w-12 shrink-0 place-items-center rounded-full",
-              listening ? "bg-teal text-white animate-pulse" : "bg-teal/12 text-teal",
-            )}
-            onClick={() => void pushToTalk()}
-            aria-label="Push to talk"
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#eef2f6] text-mut"
+            onClick={() => void optionalMic()}
+            aria-label="Optional voice"
+            title="Optional — type is enough"
           >
             <Mic className="size-5" />
           </button>
@@ -377,24 +390,20 @@ export function AiAssistScreen() {
             inputMode="text"
             enterKeyHint="send"
             autoComplete="off"
-            className="h-12 min-w-0 flex-1 rounded-full border border-line bg-[#f4f7fb] px-4 text-base outline-none focus:border-teal"
-            placeholder="Message Vimby…"
+            className="h-12 min-w-0 flex-1 rounded-full border-2 border-line bg-[#f4f7fb] px-4 text-base text-navy outline-none focus:border-teal"
+            placeholder="Type to Vimby…"
             value={input}
-            disabled={!welcomeDone && !s.firstAiDone}
             onChange={(e) => setInput(e.target.value)}
           />
           <button
             type="submit"
             disabled={busy || !input.trim()}
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-navy text-white disabled:opacity-40"
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-teal text-white disabled:opacity-40"
             aria-label="Send"
           >
             <Send className="size-4" />
           </button>
         </form>
-        <p className="mt-1 text-center text-[10px] text-mut">
-          Hold the conversation — mic once, or Live talk for continuous turns
-        </p>
       </div>
     </section>
   );
