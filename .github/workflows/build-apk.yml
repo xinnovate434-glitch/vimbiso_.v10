@@ -7,13 +7,15 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Install deps
+      - name: Install dependencies
         run: npm ci || npm install
 
       - name: Build FULL Vimbiso React UI
@@ -25,48 +27,62 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
         run: |
           set -e
-          npx vite build --config vite.capacitor.config.ts 2>&1 | tee /tmp/vite-build.log
-          if [ ! -f dist/capacitor.html ] && [ ! -f dist/index.html ]; then
-            echo "==== VITE LOG (last 80 lines) ===="
-            tail -80 /tmp/vite-build.log
-            exit 1
+          npx vite build --config vite.capacitor.config.ts
+          if [ -f dist/capacitor.html ]; then
+            mv dist/capacitor.html dist/index.html
           fi
-          if [ -f dist/capacitor.html ]; then mv dist/capacitor.html dist/index.html; fi
           test -f dist/index.html
           du -sh dist
-          find dist -name '*.jpg' | wc -l
+          find dist -name '*.jpg' | wc -l || true
 
       - name: Capacitor Android
         run: |
+          set -e
           npm install -D @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6
           printf '%s\n' '{"appId":"co.vimbiso.network","appName":"Vimbiso Network","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
           npx cap add android
           npx cap sync android
-          python3 /home/runner/work/vimbiso_.v10/vimbiso_.v10/scripts/patch_manifest.py 2>/dev/null || python3 <<'PY'
-from pathlib import Path
-p=Path("android/app/src/main/AndroidManifest.xml")
-if p.exists():
- t=p.read_text()
- for perm in ["android.permission.RECORD_AUDIO","android.permission.ACCESS_FINE_LOCATION","android.permission.ACCESS_COARSE_LOCATION","android.permission.POST_NOTIFICATIONS"]:
-  if perm not in t:
-   i=t.find(">")
-   t=t[:i+1]+"\n    <uses-permission android:name=\"%s\" />"%perm+t[i+1:]
- p.write_text(t)
- print("perms")
-PY
 
-      - uses: actions/setup-java@v4
+      - name: Android permissions
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          if not p.exists():
+              raise SystemExit(0)
+          t = p.read_text()
+          perms = [
+              "android.permission.RECORD_AUDIO",
+              "android.permission.ACCESS_FINE_LOCATION",
+              "android.permission.ACCESS_COARSE_LOCATION",
+              "android.permission.POST_NOTIFICATIONS",
+              "android.permission.INTERNET",
+          ]
+          for perm in perms:
+              if perm in t:
+                  continue
+              tag = f'    <uses-permission android:name="{perm}" />\n'
+              i = t.find(">")
+              if i > 0:
+                  t = t[: i + 1] + "\n" + tag + t[i + 1 :]
+          p.write_text(t)
+          print("permissions ok")
+          PY
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Gradle APK
+      - name: Gradle assembleDebug
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: vimbiso-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
