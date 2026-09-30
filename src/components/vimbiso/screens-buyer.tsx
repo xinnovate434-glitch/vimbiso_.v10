@@ -713,6 +713,9 @@ export function BasketScreen() {
         </Btn>
       </Pad>
     </section>
+  );
+}
+
 export function RadarScreen() {
   const s = useVimbiso();
   const mapRef = useRef<HTMLDivElement>(null);
@@ -1071,9 +1074,6 @@ export function RadarScreen() {
         </Btn>
       </div>
     </section>
-  );
-}
-
   );
 }
 

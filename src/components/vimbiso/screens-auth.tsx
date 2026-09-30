@@ -262,10 +262,6 @@ export function SignInScreen() {
           userStatus: user.status ?? "pending",
           name: user.name || s.name,
           city: user.city || s.city,
-          userStatus: user.status,
-          vimbisoId: user.vimbiso_id,
-          name: user.name,
-          city: user.city,
           phone: cleaned,
         });
       } else {
@@ -348,10 +344,6 @@ export function OtpScreen() {
           completedTrades: user.completed_trades ?? 0,
           vimbisoId: user.vimbiso_id ?? null,
           userStatus: user.status ?? "pending",
-          name: user.name || s.name,
-          city: user.city || s.city,
-          userStatus: user.status,
-          vimbisoId: user.vimbiso_id,
           name: user.name || s.name,
           city: user.city || s.city,
         });
@@ -577,10 +569,6 @@ export function SignupScreen() {
           userStatus: user.status ?? "pending",
           name: user.name || s.name,
           city: user.city || s.city,
-                  userStatus: user.status,
-                  vimbisoId: user.vimbiso_id,
-                  name: user.name,
-                  city: user.city,
                 });
                 s.toastMsg("Account created — waiting for admin approval");
                 if (s.regRole === "delivery") s.go("delreg");
