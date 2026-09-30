@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Home,
   ShoppingBag,
@@ -8,6 +8,11 @@ import {
   Inbox,
   Bike,
   ClipboardList,
+  Plus,
+  Map,
+  Mic,
+  Handshake,
+  X,
 } from "lucide-react";
 import { PORTRAITS } from "@/lib/vimbiso/data";
 import { HIDE_NAV, useVimbiso, type Screen } from "@/lib/vimbiso/store";
@@ -147,6 +152,7 @@ export function VimbisoApp() {
             </div>
           </nav>
         ) : null}
+        {!hideNav ? <FabMenu role={role} /> : null}
         <div className={cn("vn-toast", toast && "on")}>{toast?.message}</div>
         {voiceOn ? <VoiceOverlay /> : null}
         {poolOpen ? <PoolSheet /> : null}
@@ -155,54 +161,117 @@ export function VimbisoApp() {
   );
 }
 
+
+function FabMenu({ role }: { role: string }) {
+  const [open, setOpen] = useState(false);
+  const go = useVimbiso((s) => s.go);
+  const set = useVimbiso((s) => s.set);
+
+  const items =
+    role === "trader"
+      ? [
+          { id: "incoming", label: "Buyer requests", sub: "Respond live", Icon: Inbox, run: () => go("incoming") },
+          { id: "map", label: "Network map", sub: "Expand by distance", Icon: Map, run: () => go("radar") },
+          { id: "offer", label: "Make offer", sub: "Quote a buyer", Icon: Handshake, run: () => go("makeoffer") },
+          { id: "trade", label: "Go online", sub: "Trader desk", Icon: Zap, run: () => go("trade") },
+        ]
+      : role === "delivery"
+        ? [
+            { id: "jobs", label: "Open jobs", sub: "Deliveries near you", Icon: ClipboardList, run: () => go("delJobs") },
+            { id: "map", label: "Network map", sub: "Expand by distance", Icon: Map, run: () => go("radar") },
+            { id: "dash", label: "Driver desk", sub: "Go online", Icon: Bike, run: () => go("delDash") },
+            { id: "hist", label: "History", sub: "Past runs", Icon: Package, run: () => go("status") },
+          ]
+        : [
+            { id: "bid", label: "Build a bid", sub: "Say what you need", Icon: ShoppingBag, run: () => go("bid") },
+            { id: "map", label: "Network map", sub: "Find people nearby", Icon: Map, run: () => go("radar") },
+            { id: "voice", label: "Voice order", sub: "Speak your need", Icon: Mic, run: () => set({ voiceOn: true }) },
+            { id: "offer", label: "Live offers", sub: "Traders responding", Icon: Handshake, run: () => go("offers") },
+          ];
+
+  return (
+    <div className="pointer-events-none absolute right-3 bottom-[78px] z-[40] flex flex-col items-end gap-2">
+      {open ? (
+        <div className="pointer-events-auto mb-1 w-[220px] overflow-hidden rounded-lg border border-line bg-white shadow-[var(--shadow-lift)]">
+          {items.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              className="flex w-full items-center gap-3 border-b border-line px-3 py-3 text-left last:border-b-0 active:bg-navy/5"
+              onClick={() => {
+                setOpen(false);
+                it.run();
+              }}
+            >
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-teal/12 text-teal">
+                <it.Icon className="size-4" strokeWidth={2.4} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-extrabold text-navy">{it.label}</span>
+                <span className="block text-[11px] text-mut">{it.sub}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        aria-label={open ? "Close actions" : "Open actions"}
+        className="pointer-events-auto grid h-14 w-14 place-items-center rounded-full bg-teal text-white shadow-[0_10px_28px_rgba(15,118,110,0.45)] transition active:scale-95"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? <X className="size-6" strokeWidth={2.5} /> : <Plus className="size-7" strokeWidth={2.5} />}
+      </button>
+    </div>
+  );
+}
+
 function VoiceOverlay() {
   const s = useVimbiso();
   useEffect(() => {
-    const phrases = ["20kg tomatoes", "maize meal 10kg", "phone charger", "plumber near me"];
-    let i = 0;
-    const t = window.setInterval(() => {
-      const el = document.getElementById("voiceTxt");
-      if (el) el.textContent = phrases[i % phrases.length] + "…";
-      i += 1;
-    }, 450);
-    const done = window.setTimeout(() => {
-      s.set({ voiceOn: false, search: "20kg tomatoes" });
-      s.toastMsg("Heard: 20kg tomatoes");
-    }, 2200);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { canListen, listenOnce, speak } = await import("@/lib/vimbiso/voice");
+        if (!canListen()) {
+          if (!cancelled) {
+            s.toastMsg("Mic not available — type what you need");
+            s.set({ voiceOn: false });
+          }
+          return;
+        }
+        const text = await listenOnce("en-US");
+        if (cancelled) return;
+        if (text) {
+          s.set({ voiceOn: false, search: text, bidItem: text });
+          s.toastMsg("Heard: " + text);
+          speak("You need " + text);
+          s.go("bid");
+        } else {
+          s.set({ voiceOn: false });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          s.toastMsg(e instanceof Error ? e.message : "Voice failed");
+          s.set({ voiceOn: false });
+        }
+      }
+    })();
     return () => {
-      clearInterval(t);
-      clearTimeout(done);
+      cancelled = true;
     };
   }, [s]);
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-navy-3/92 px-6 text-center text-white backdrop-blur-sm">
       <div className="grid h-16 w-16 place-items-center rounded-full bg-teal">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" x2="12" y1="19" y2="22" />
-        </svg>
+        <Mic className="size-7 text-white" />
       </div>
       <h2 className="font-display mt-3.5 text-xl font-extrabold">Listening…</h2>
-      <p className="mt-1 text-xs text-white/70">Say what you need in English, Shona or Ndebele</p>
-      <div className="mt-6 flex h-[60px] items-end gap-1.5">
-        {Array.from({ length: 7 }, (_, i) => (
-          <i
-            key={i}
-            className="w-1.5 rounded-full bg-teal-3"
-            style={{
-              animation: "vn-wv 1s ease-in-out infinite",
-              animationDelay: `${i * 0.1}s`,
-              height: 12,
-            }}
-          />
-        ))}
-      </div>
-      <p id="voiceTxt" className="font-display mt-4 text-[22px] font-extrabold text-teal-3">
-        …
-      </p>
-      <style>{`@keyframes vn-wv{0%,100%{height:12px}50%{height:54px}}`}</style>
+      <p className="mt-1 text-xs text-white/70">Say what you need — we only use what you say</p>
+      <Btn variant="ghost" className="mt-6 text-white" onClick={() => s.set({ voiceOn: false })}>
+        Cancel
+      </Btn>
     </div>
   );
 }
