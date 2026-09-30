@@ -48,7 +48,7 @@ import {
   Wordmark,
 } from "./primitives";
 import { MapHeat } from "./map-heat";
-iexport function HomeScreen() {
+export function HomeScreen() {
   const s = useVimbiso();
   const t = DICT[s.lang];
   const [weather, setWeather] = useState<WeatherNow | null>(null);
@@ -126,7 +126,7 @@ iexport function HomeScreen() {
           </h1>
           {weather ? (
             <p className="mt-1 text-xs text-white/75">
-              {s.city || "Near you"} · {weather.temp}° · {weather.summary}
+              {s.city || "Near you"} · {weather.temp}° · {weather.description}
             </p>
           ) : (
             <p className="mt-1 text-xs text-white/75">{s.city || "Vimbiso Network"}</p>
