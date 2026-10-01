@@ -1,11 +1,19 @@
 /**
- * Vimby voice: ElevenLabs (quality) → system TTS → audio fallback.
+ * Vimby voice out:
+ * 1) ElevenLabs via native CapacitorHttp (avoids WebView CORS)
+ * 2) Device speechSynthesis
+ * 3) Short audio URL fallback
  */
 
 import { config, elevenConfigured } from "./config";
 
 let unlocked = false;
 let currentAudio: HTMLAudioElement | null = null;
+let lastError = "";
+
+export function getLastVoiceError() {
+  return lastError;
+}
 
 export function canListen(): boolean {
   if (typeof window === "undefined") return false;
@@ -17,33 +25,36 @@ export function canListen(): boolean {
 }
 
 export function canSpeak(): boolean {
-  if (typeof window === "undefined") return false;
-  if (elevenConfigured()) return true;
-  try {
-    return typeof window.speechSynthesis !== "undefined";
-  } catch {
-    return false;
-  }
+  return true; // we always attempt at least one path
 }
 
+/** Must run on a user tap once */
 export function unlockAudio() {
   unlocked = true;
   try {
     if (window.speechSynthesis) {
-      const u = new SpeechSynthesisUtterance(" ");
-      u.volume = 0;
+      const u = new SpeechSynthesisUtterance(".");
+      u.volume = 0.01;
       window.speechSynthesis.speak(u);
-      window.speechSynthesis.cancel();
+      window.setTimeout(() => {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          /* ignore */
+        }
+      }, 30);
     }
   } catch {
     /* ignore */
   }
   try {
-    const a = new Audio(
-      "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA",
-    );
-    a.volume = 0.01;
-    void a.play().then(() => a.pause()).catch(() => {});
+    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    void ctx.resume();
   } catch {
     /* ignore */
   }
@@ -55,7 +66,7 @@ type Rec = {
   maxAlternatives: number;
   continuous: boolean;
   onresult: ((ev: {
-    results: { [i: number]: { [j: number]: { transcript: string }; isFinal?: boolean }; length: number };
+    results: { [i: number]: { [j: number]: { transcript: string } }; length: number };
   }) => void) | null;
   onerror: ((ev: { error?: string }) => void) | null;
   onend: (() => void) | null;
@@ -91,14 +102,11 @@ export function listenOnce(lang = "en-US", timeoutMs = 10000): Promise<string> {
       }
       fn();
     };
-    const timer = window.setTimeout(() => {
-      finish(() => reject(new Error("Handina kunzwa — nyora pasi")));
-    }, timeoutMs);
+    const timer = window.setTimeout(() => finish(() => reject(new Error("Handina kunzwa"))), timeoutMs);
     rec.onresult = (ev) => {
       let text = "";
       try {
-        const n = ev.results?.length || 0;
-        for (let i = 0; i < n; i++) text += ev.results[i]?.[0]?.transcript || "";
+        for (let i = 0; i < (ev.results?.length || 0); i++) text += ev.results[i]?.[0]?.transcript || "";
       } catch {
         /* ignore */
       }
@@ -109,7 +117,7 @@ export function listenOnce(lang = "en-US", timeoutMs = 10000): Promise<string> {
     };
     rec.onerror = () => {
       window.clearTimeout(timer);
-      finish(() => reject(new Error("Mic yakatadza — nyora pasi")));
+      finish(() => reject(new Error("Mic yakatadza")));
     };
     rec.onend = () => {
       window.clearTimeout(timer);
@@ -119,7 +127,7 @@ export function listenOnce(lang = "en-US", timeoutMs = 10000): Promise<string> {
       rec.start();
     } catch {
       window.clearTimeout(timer);
-      reject(new Error("Mic yatadza kutanga"));
+      reject(new Error("Mic yatadza"));
     }
   });
 }
@@ -136,41 +144,96 @@ function stopAudio() {
   }
 }
 
-async function speakElevenLabs(text: string): Promise<boolean> {
-  const key = config.elevenlabs.apiKey;
-  const voiceId = config.elevenlabs.voiceId || "21m00Tcm4TlvDq8ikWAM";
+async function playBlob(buf: ArrayBuffer, mime = "audio/mpeg") {
+  stopAudio();
+  const blob = new Blob([buf], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = new Audio(url);
+  a.setAttribute("playsinline", "true");
+  currentAudio = a;
+  await a.play();
+  a.onended = () => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  };
+}
+
+/** Capacitor native HTTP bypasses CORS for ElevenLabs */
+async function elevenLabsNative(text: string): Promise<boolean> {
+  const key = config.elevenlabs?.apiKey;
+  const voiceId = config.elevenlabs?.voiceId || "21m00Tcm4TlvDq8ikWAM";
   if (!key || !text) return false;
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+  const body = JSON.stringify({
+    text: text.slice(0, 2500),
+    model_id: "eleven_multilingual_v2",
+    voice_settings: { stability: 0.45, similarity_boost: 0.75 },
+  });
+
+  // Try CapacitorHttp (native, no CORS)
   try {
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    const Cap = (window as unknown as { Capacitor?: { Plugins?: { CapacitorHttp?: {
+      request: (opts: Record<string, unknown>) => Promise<{ status: number; data: string; headers?: Record<string, string> }>;
+    } } } }).Capacitor;
+    const Http = Cap?.Plugins?.CapacitorHttp;
+    if (Http?.request) {
+      const res = await Http.request({
+        url,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+          "xi-api-key": key,
+        },
+        data: body,
+        responseType: "arraybuffer",
+      });
+      if (res.status >= 200 && res.status < 300 && res.data) {
+        // Capacitor may return base64 string for binary
+        let buf: ArrayBuffer;
+        if (typeof res.data === "string") {
+          const binary = atob(res.data);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          buf = bytes.buffer;
+        } else {
+          buf = res.data as unknown as ArrayBuffer;
+        }
+        await playBlob(buf);
+        lastError = "";
+        return true;
+      }
+      lastError = `ElevenLabs HTTP ${res.status}`;
+    }
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : "CapacitorHttp fail";
+  }
+
+  // Browser fetch (works on some WebViews / desktop)
+  try {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "xi-api-key": key,
         Accept: "audio/mpeg",
+        "xi-api-key": key,
       },
-      body: JSON.stringify({
-        text: text.slice(0, 2500),
-        model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.45, similarity_boost: 0.75 },
-      }),
+      body,
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      lastError = `ElevenLabs ${res.status}`;
+      return false;
+    }
     const buf = await res.arrayBuffer();
-    const blob = new Blob([buf], { type: "audio/mpeg" });
-    const url = URL.createObjectURL(blob);
-    stopAudio();
-    const a = new Audio(url);
-    currentAudio = a;
-    await a.play();
-    a.onended = () => {
-      try {
-        URL.revokeObjectURL(url);
-      } catch {
-        /* ignore */
-      }
-    };
+    await playBlob(buf);
+    lastError = "";
     return true;
-  } catch {
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : "fetch CORS/network";
     return false;
   }
 }
@@ -181,18 +244,13 @@ function speakNative(text: string, lang: string): boolean {
     const synth = window.speechSynthesis;
     synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang || "en-US";
-    u.rate = 0.95;
-    try {
-      const voices = synth.getVoices() || [];
-      const prefer =
-        voices.find((v) => v.lang && v.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase())) ||
-        voices.find((v) => /en/i.test(v.lang || "")) ||
-        voices[0];
-      if (prefer) u.voice = prefer;
-    } catch {
-      /* ignore */
-    }
+    u.lang = lang.startsWith("sn") ? "en-US" : lang || "en-US";
+    u.rate = 0.92;
+    u.volume = 1;
+    const voices = synth.getVoices() || [];
+    const prefer =
+      voices.find((v) => /en-US|en_GB|en-/i.test(v.lang || "")) || voices[0];
+    if (prefer) u.voice = prefer;
     synth.speak(u);
     return true;
   } catch {
@@ -200,26 +258,28 @@ function speakNative(text: string, lang: string): boolean {
   }
 }
 
-function speakAudioFallback(text: string, lang: string) {
+function speakAudioFallback(text: string) {
   stopAudio();
-  const tl = lang.toLowerCase().startsWith("sn") ? "en" : lang.slice(0, 2) || "en";
-  const clean = text.replace(/\s+/g, " ").trim().slice(0, 180);
+  const clean = text.replace(/\s+/g, " ").trim().slice(0, 160);
   if (!clean) return;
+  // Split into short chunks for reliability
+  const chunk = clean;
   const url =
-    "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=" +
-    encodeURIComponent(tl) +
-    "&q=" +
-    encodeURIComponent(clean);
+    "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=" +
+    encodeURIComponent(chunk);
   try {
     const a = new Audio(url);
+    a.setAttribute("playsinline", "true");
+    a.volume = 1;
     currentAudio = a;
-    void a.play().catch(() => {});
-  } catch {
-    /* ignore */
+    void a.play().catch((err) => {
+      lastError = String(err);
+    });
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : "audio fail";
   }
 }
 
-/** Speak: ElevenLabs first, then device TTS, then fallback */
 export function speak(text: string, lang = "en-US") {
   if (!text) return;
   unlockAudio();
@@ -230,19 +290,23 @@ export function speak(text: string, lang = "en-US") {
     /* ignore */
   }
   void (async () => {
-    const ok11 = await speakElevenLabs(text);
-    if (ok11) return;
-    const ok = speakNative(text, lang);
-    if (!ok) speakAudioFallback(text, lang);
-    else {
-      window.setTimeout(() => {
-        try {
-          if (!window.speechSynthesis?.speaking) speakAudioFallback(text, lang);
-        } catch {
-          speakAudioFallback(text, lang);
-        }
-      }, 700);
+    if (elevenConfigured()) {
+      const ok = await elevenLabsNative(text);
+      if (ok) return;
     }
+    const ok = speakNative(text, lang);
+    if (!ok) {
+      speakAudioFallback(text);
+      return;
+    }
+    // Android often reports speak() but is silent
+    window.setTimeout(() => {
+      try {
+        if (!window.speechSynthesis?.speaking) speakAudioFallback(text);
+      } catch {
+        speakAudioFallback(text);
+      }
+    }, 500);
   })();
 }
 
@@ -255,13 +319,16 @@ export async function speakAsync(text: string, lang = "en-US"): Promise<void> {
   } catch {
     /* ignore */
   }
-  const ok11 = await speakElevenLabs(text);
-  if (ok11) {
-    await new Promise((r) => setTimeout(r, Math.min(12000, 600 + text.length * 50)));
-    return;
+  if (elevenConfigured()) {
+    const ok = await elevenLabsNative(text);
+    if (ok) {
+      await new Promise((r) => setTimeout(r, Math.min(14000, 800 + text.length * 55)));
+      return;
+    }
   }
   speakNative(text, lang);
-  await new Promise((r) => setTimeout(r, Math.min(8000, 400 + text.length * 45)));
+  speakAudioFallback(text); // dual path so something is heard
+  await new Promise((r) => setTimeout(r, Math.min(9000, 500 + text.length * 50)));
 }
 
 export function stopSpeaking() {

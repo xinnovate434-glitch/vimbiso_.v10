@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Mic, Send, Bot, User as UserIcon } from "lucide-react";
 import { useVimbiso } from "@/lib/vimbiso/store";
-import { assistReply, aiConfigured, welcomeScript, routeFromSpeech } from "@/lib/vimbiso/ai";
+import { assistReply, aiConfigured, welcomeScript } from "@/lib/vimbiso/ai";
 import { parseDeal, draftToBidItem } from "@/lib/vimbiso/deal-desk";
 import { canListen, listenOnce, speakAsync, stopSpeaking, unlockAudio, speak } from "@/lib/vimbiso/voice";
 import { Badge, Btn, Card, IconBtn, Pad, TopBar } from "./primitives";
@@ -162,13 +162,10 @@ export function AiAssistScreen() {
           city: draft.city || s.city,
         });
       }
-      if (voiceReply) await speakAsync(reply);
-      const dest = routeFromSpeech(t, s.role);
-      if (dest) {
-        window.setTimeout(() => {
-          if (dest === "home") s.goHome();
-          else s.go(dest);
-        }, 1800);
+      if (voiceReply) {
+        await speakAsync(reply);
+        const ve = getLastVoiceError?.();
+        if (ve) console.warn("voice:", ve);
       }
     } catch {
       const fallback =
