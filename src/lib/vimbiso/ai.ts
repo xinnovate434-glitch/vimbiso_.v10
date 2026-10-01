@@ -5,91 +5,134 @@ export function aiConfigured() {
   return Boolean(config.gemini.apiKey && String(config.gemini.apiKey).length > 10);
 }
 
-const SYSTEM = `You are Vimby, voice assistant inside Vimbiso Network (Zimbabwe informal trade).
-ONLY help with this app: buy, sell, bids, offers, delivery, map, chat, meet points, trust, EcoCash/cash on collect.
-Never invent fake traders or prices. 1–3 short spoken sentences. Simple English.
-Ask one clear next question when needed.`;
+const SYSTEM_SHONA = `Iwe ndiwe Vimby, mubatsiri weVimbiso Network (kutengeserana kuZimbabwe).
+TAURA MUCHISHONA chete (Shona only). Usashandise Chirungu kunze kwekuti mushandisi atanga neChirungu — asi prefer Shona.
+Batsira zvese zvine chekuita nebhizinesi paVimbiso:
+- kutenga, kutengesa, bids, offers, delivery, map/nearby, chat, orders, profile, trust, EcoCash/cash on collect, pooling
+- kuti munhu aise order, aone orders, ashandure profile, awane vari pedyo
+Usabvise zita remunhu kana mitengo isiri yechokwadi. Kana usina data ye live, udza mushandisi kuti aise bid kana avhure map.
+Mhinduro pfupi: mitsara 1–3. Iva interactive — bvunza mubvunzo umwe unotevera kana zvakakodzera.
+Kana vakati "buy" / "tenga" / "order" — vatungamirire kuMy need kana explain matanho.
+Kana "nearby" / "pedyo" — vatungamirire kuFind nearby.
+Kana "orders" / "maorder" — ku status/orders.
+Kana "profile" / "picha" — ku profile.
+Uri mubatsiri webhizinesi pa app iyi, kwete homework kana politics.`;
 
-/** Local brain when Gemini key is missing or API fails — still useful for low-literacy / blind users. */
+/** Local Shona-first helper when Gemini is offline */
 export function localAssist(userMessage: string, role?: string, name?: string): string {
-  const who = (name || "").trim().split(/\s+/)[0] || "friend";
+  const who = (name || "").trim().split(/\s+/)[0] || "shamwari";
   const t = (userMessage || "").trim().toLowerCase();
   const draft = parseDeal(userMessage || "");
 
-  if (!t || /hello|hi|hey|mhoroi|sawubona/.test(t)) {
-    if (role === "trader") return `Hello ${who}. I'm Vimby. What are we selling today? Say the product and price.`;
-    if (role === "delivery") return `Hello ${who}. I'm Vimby. Say open jobs if you want delivery work near you.`;
-    return `Hello ${who}. I'm Vimby on Vimbiso Network. What are we buying today? Say the item and quantity.`;
+  if (!t || /hello|hi|hey|mhoroi|sawubona|mangwanani|manheru/.test(t)) {
+    if (role === "trader")
+      return `Mhoroi ${who}. Ndiri Vimby paVimbiso Network. Muri kutengesa chii nhasi? Taura chigadzirwa nemutengo.`;
+    if (role === "delivery")
+      return `Mhoroi ${who}. Ndiri Vimby. Muri kuda mabasa ekutakura ari pedyo here?`;
+    return `Mhoroi ${who}. Ndiri Vimby paVimbiso Network. Muri kuda kutenga chii nhasi? Taura chinhu nehuwandu.`;
   }
 
-  if (/help|what can you|how (do|to)|blind|can't see|cannot see/.test(t)) {
-    return `I am Vimby. Speak or type what you need. Say buy tomatoes, find nearby, open chat, or hang up for the home screen. I only help inside Vimbiso Network.`;
+  if (/help|batsira|how (do|to)|sei|ndingaitasei|place order|order|isa order/.test(t)) {
+    return `Ndinokubatsira paVimbiso. Kutenga: taura chinhu nehuwandu, wobva waisa bid paMy need. Kutengesa: tarisa zvikumbiro zvevatengi. Vari pedyo: vhura Find nearby. Maorder: vhura Status. Profile: vhura Me. Chii chaunoda kuita izvozvi?`;
   }
 
-  if (/chat|message|sms/.test(t)) {
-    return `Opening chat. You can message people you match with on the network.`;
+  if (/profile|picha|picture|photo|account|id/.test(t)) {
+    return `Ndichikuvhura profile yako. Ikoko unogona kuchinja picha, kuona Vimbiso ID, neSettings.`;
   }
-  if (/map|nearby|near me|find|where|radar/.test(t)) {
-    return `Opening Find nearby. The map expands from your position. Only real network users appear.`;
+
+  if (/order|maorder|status|progress/.test(t)) {
+    return `Ndichikuvhura maorder / status. Kana usina trade ichiri kufamba, icharatidza empty — zvinobva pazvisungo zvechokwadi.`;
   }
-  if (/sell|offer|request/.test(t) && role === "trader") {
-    return `Opening buyer requests. Answer live needs on the network.`;
+
+  if (/chat|message|taura|sms/.test(t)) {
+    return `Ndichikuvhura Chat. Unotaura nevanhu vaunowana match navo pa network.`;
   }
-  if (/deliver|job|ride/.test(t)) {
+
+  if (/map|nearby|pedyo|find|where|radar|ndiani/.test(t)) {
+    return `Ndichikuvhura Find nearby. Mepu inokura kubva pane uri. Vanhu vechokwadi chete ndivo vanoonekwa.`;
+  }
+
+  if (/sell|tengesa|offer|request|zvikumbiro/.test(t) && role === "trader") {
+    return `Ndichikuvhura zvikumbiro zvevatengi. Pindura zvinodiwa zviri live.`;
+  }
+
+  if (/deliver|kutakura|job|ride/.test(t)) {
     return role === "delivery"
-      ? `Opening delivery jobs near you.`
-      : `You can ask for delivery after you match a trader. Opening the map.`;
+      ? `Ndichikuvhura mabasa ekutakura ari pedyo.`
+      : `Delivery inowanikwa mushure mekunge wawana trader. Ndichikuvhura mepu.`;
   }
 
   if (draft) {
-    const price = draft.maxPrice != null ? ` max ${draft.maxPrice} dollars` : "";
-    const city = draft.city ? ` in ${draft.city}` : "";
-    return `Got it ${who}: ${draft.qty} ${draft.unit} of ${draft.item}${price}${city}. I will open My need so you can post this on the live network.`;
+    const price = draft.maxPrice != null ? ` mutengo usapfuure ${draft.maxPrice}` : "";
+    const city = draft.city ? ` ku${draft.city}` : "";
+    return `Ndanzwisisa ${who}: ${draft.qty} ${draft.unit} ye${draft.item}${price}${city}. Ndichikuvhura My need kuti uise bid pa network.`;
   }
 
-  if (/buy|need|want|order|tomato|maize|onion|banana|meal/.test(t)) {
-    return `Tell me the quantity and your max price, for example twenty kg tomatoes max fifteen. Then I open My need for you.`;
+  if (/buy|tenga|need|want|order|tomato|madomasi|maize|hupfu|onion|hanyanisi|banana/.test(t)) {
+    return `Taura huwandu nemutengo wako, semuenzaniso: madomasi 20kg mutengo 15. Ndichizokuvhura My need.`;
   }
 
-  return `I'm with you on Vimbiso only. Say what to buy or sell, or say map, chat, or help.`;
+  if (/home|enda kumba|stop|exit|close|hang/.test(t)) {
+    return `Ndichikudzosa kuhome yeVimbiso.`;
+  }
+
+  return `Ndiri Vimby paVimbiso chete. Taura zvaunoda kutenga kana kutengesa, kana ti: map, chat, orders, profile, help.`;
 }
 
-const MODELS = [
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-latest",
-  "gemini-flash-latest",
-];
+const MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-flash-latest"];
 
 export async function assistReply(
   userMessage: string,
-  contextLine?: string,
+  context?:
+    | string
+    | {
+        role?: string;
+        city?: string;
+        name?: string;
+        onlineTraders?: number;
+        sampleNames?: string[];
+      },
   meta?: { role?: string; name?: string },
 ): Promise<string> {
-  const key = config.gemini.apiKey;
-  const fallback = () => localAssist(userMessage, meta?.role, meta?.name);
-
-  if (!key || String(key).length < 10) {
-    return fallback();
+  let role = meta?.role;
+  let name = meta?.name;
+  let contextLine = "";
+  if (typeof context === "string") {
+    contextLine = context;
+  } else if (context && typeof context === "object") {
+    role = context.role || role;
+    name = context.name || name;
+    contextLine = [
+      context.city ? `City: ${context.city}` : "",
+      context.onlineTraders != null ? `Online traders count: ${context.onlineTraders}` : "",
+      context.sampleNames?.length ? `Names on network (real only): ${context.sampleNames.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
   }
 
+  const key = config.gemini.apiKey;
+  const fallback = () => localAssist(userMessage, role, name);
+
+  if (!key || String(key).length < 10) return fallback();
+
   const bodyBase = {
-    systemInstruction: { parts: [{ text: SYSTEM }] },
+    systemInstruction: { parts: [{ text: SYSTEM_SHONA }] },
     contents: [
       {
         role: "user",
         parts: [
           {
             text:
-              (contextLine ? `App context: ${contextLine}\n` : "") +
-              (meta?.name ? `User name: ${meta.name}. ` : "") +
-              (meta?.role ? `Role: ${meta.role}. ` : "") +
-              `User said: ${userMessage || "opened Vimby"}`,
+              (contextLine ? `Mamiriro eapp: ${contextLine}\n` : "") +
+              (name ? `Zita: ${name}. ` : "") +
+              (role ? `Basa: ${role}. ` : "") +
+              `Mushandisi ati: ${userMessage || "avhura Vimby"}`,
           },
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 160, temperature: 0.35 },
+    generationConfig: { maxOutputTokens: 220, temperature: 0.45 },
   };
 
   for (const model of MODELS) {
@@ -104,18 +147,35 @@ export async function assistReply(
       );
       const data = (await res.json()) as {
         candidates?: { content?: { parts?: { text?: string }[] } }[];
-        error?: { message?: string };
       };
       const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("").trim();
       if (text) return text;
     } catch {
-      /* try next model */
+      /* next */
     }
   }
-
   return fallback();
 }
 
 export function welcomeScript(name?: string, role?: string): string[] {
-  return [localAssist("hello", role, name)];
+  return [localAssist("mhoroi", role, name)];
+}
+
+/** App navigation from speech/text */
+export function routeFromSpeech(
+  text: string,
+  role: string,
+): "bid" | "radar" | "messages" | "incoming" | "delJobs" | "profile" | "status" | "settings" | "home" | null {
+  const t = text.toLowerCase();
+  if (/home|enda kumba|stop|exit|close|hang up/.test(t)) return "home";
+  if (/profile|picha|picture|photo|me screen|account/.test(t)) return "profile";
+  if (/setting/.test(t)) return "settings";
+  if (/order|maorder|status|progress/.test(t)) return "status";
+  if (/message|chat|taura ne/.test(t)) return "messages";
+  if (/map|nearby|pedyo|find|where|radar|ndiani/.test(t)) return "radar";
+  if (/deliver|kutakura|job|ride/.test(t)) return role === "delivery" ? "delJobs" : "radar";
+  if (/sell|tengesa|offer|request|zvikumbiro/.test(t) && role === "trader") return "incoming";
+  if (/buy|tenga|need|want|order|bid|my need|tomato|madomasi|maize|onion|banana/.test(t)) return "bid";
+  if (parseDeal(text)) return "bid";
+  return null;
 }

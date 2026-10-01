@@ -1,25 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Phone, Keyboard } from "lucide-react";
 import { useVimbiso } from "@/lib/vimbiso/store";
-import { speak, stopSpeaking, canSpeak, canListen, listenOnce } from "@/lib/vimbiso/voice";
-import { assistReply, localAssist } from "@/lib/vimbiso/ai";
-import { parseDeal } from "@/lib/vimbiso/deal-desk";
+import { speak, speakAsync, stopSpeaking, canSpeak, canListen, listenOnce, unlockAudio } from "@/lib/vimbiso/voice";
+import { assistReply, localAssist, routeFromSpeech } from "@/lib/vimbiso/ai";
 
 function firstName(name: string) {
   const n = (name || "").trim().split(/\s+/)[0];
   return n || "friend";
-}
-
-function routeFromSpeech(text: string, role: string): "bid" | "radar" | "messages" | "incoming" | "delJobs" | "home" | null {
-  const t = text.toLowerCase();
-  if (/message|chat|talk to (a )?trader|sms/.test(t)) return "messages";
-  if (/map|nearby|find|where|radar|near me/.test(t)) return "radar";
-  if (/deliver|job|ride/.test(t)) return role === "delivery" ? "delJobs" : "radar";
-  if (/sell|offer|request/.test(t) && role === "trader") return "incoming";
-  if (/buy|need|order|tomato|maize|onion|want|banana|meal/.test(t)) return "bid";
-  if (parseDeal(text)) return "bid";
-  if (/home|hang up|stop|exit|close/.test(t)) return "home";
-  return null;
 }
 
 function fmtTime(sec: number) {
@@ -112,7 +99,7 @@ export function VimbyCallScreen() {
     // Instant local reply so blind / offline users never wait on Gemini
     const local = localAssist(text, s.role, s.name);
     setCaption(local);
-    speakOut(local);
+    try { await speakAsync(local, "en-US"); } catch { speakOut(local); }
 
     const dest = routeFromSpeech(text, s.role);
 

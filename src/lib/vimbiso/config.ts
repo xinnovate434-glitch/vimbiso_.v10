@@ -1,7 +1,6 @@
 /**
  * Real service configuration for Vimbiso (original app).
- * Public VITE_ keys are safe for the browser / APK.
- * Server-only secrets stay in process.env (Edge Functions / Nitro).
+ * Public VITE_ keys are injected at APK build time from GitHub secrets.
  */
 
 export const config = {
@@ -20,10 +19,13 @@ export const config = {
   gemini: {
     apiKey: import.meta.env.VITE_GEMINI_API_KEY as string | undefined,
   },
+  elevenlabs: {
+    apiKey: import.meta.env.VITE_ELEVENLABS_API_KEY as string | undefined,
+    /** Default multilingual voice — change later if you pick another in ElevenLabs */
+    voiceId: (import.meta.env.VITE_ELEVENLABS_VOICE_ID as string | undefined) || "21m00Tcm4TlvDq8ikWAM",
+  },
   africastalking: {
     username: import.meta.env.VITE_AT_USERNAME as string | undefined,
-    // API key must NOT be in the client bundle for production SMS —
-    // keep AFRICASTALKING_API_KEY on the server / Edge Function only.
   },
   authEnabled: import.meta.env.VITE_AUTH_ENABLED !== "false",
 } as const;
@@ -37,4 +39,8 @@ export function assertClientConfig() {
 
 export function aiConfigured() {
   return Boolean(config.gemini.apiKey);
+}
+
+export function elevenConfigured() {
+  return Boolean(config.elevenlabs.apiKey && String(config.elevenlabs.apiKey).length > 10);
 }

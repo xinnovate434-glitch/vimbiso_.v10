@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Mic, Send, Bot, User as UserIcon } from "lucide-react";
 import { useVimbiso } from "@/lib/vimbiso/store";
-import { assistReply, aiConfigured, welcomeScript } from "@/lib/vimbiso/ai";
+import { assistReply, aiConfigured, welcomeScript, routeFromSpeech } from "@/lib/vimbiso/ai";
 import { parseDeal, draftToBidItem } from "@/lib/vimbiso/deal-desk";
-import { canListen, listenOnce, speakAsync, stopSpeaking } from "@/lib/vimbiso/voice";
+import { canListen, listenOnce, speakAsync, stopSpeaking, unlockAudio, speak } from "@/lib/vimbiso/voice";
 import { Badge, Btn, Card, IconBtn, Pad, TopBar } from "./primitives";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ export function AiAssistScreen() {
   const [busy, setBusy] = useState(false);
   const [typed, setTyped] = useState("");
   const [welcomeDone, setWelcomeDone] = useState(!!s.firstAiDone);
-  const [voiceReply, setVoiceReply] = useState(false);
+  const [voiceReply, setVoiceReply] = useState(true); // on by default — speak every reply
   const [listening, setListening] = useState(false);
   const [lastDraft, setLastDraft] = useState<ReturnType<typeof parseDeal>>(null);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -49,6 +49,7 @@ export function AiAssistScreen() {
   useEffect(() => {
     if (s.firstAiDone) {
       setWelcomeDone(true);
+      try { unlockAudio(); void speakAsync(welcomeScript(s.name, s.role).join(" ")); } catch { /* ignore */ }
       setMsgs([
         {
           id: "w0",
@@ -70,6 +71,7 @@ export function AiAssistScreen() {
       if (cancelled) return;
       if (lineIdx >= lines.length) {
         setWelcomeDone(true);
+      try { unlockAudio(); void speakAsync(welcomeScript(s.name, s.role).join(" ")); } catch { /* ignore */ }
         s.set({ firstAiDone: true });
         try {
           localStorage.setItem("vimbiso_first_ai", "1");
@@ -117,6 +119,7 @@ export function AiAssistScreen() {
   async function runTurn(userText: string) {
     const t = userText.trim();
     if (!t || busy) return;
+    unlockAudio();
     setMsgs((m) => [
       ...m,
       {
@@ -160,6 +163,13 @@ export function AiAssistScreen() {
         });
       }
       if (voiceReply) await speakAsync(reply);
+      const dest = routeFromSpeech(t, s.role);
+      if (dest) {
+        window.setTimeout(() => {
+          if (dest === "home") s.goHome();
+          else s.go(dest);
+        }, 1800);
+      }
     } catch {
       const fallback =
         "I'm here for Vimbiso Network only. Type what you want to buy or sell, or open Build a bid.";
@@ -167,6 +177,13 @@ export function AiAssistScreen() {
         ...m,
         { id: String(Date.now() + 2), from: "ai", text: fallback, at: "now", name: "Vimby" },
       ]);
+      if (voiceReply) {
+        try {
+          await speakAsync(fallback);
+        } catch {
+          /* ignore */
+        }
+      }
     } finally {
       setBusy(false);
       window.setTimeout(() => inputRef.current?.focus(), 150);
@@ -174,6 +191,7 @@ export function AiAssistScreen() {
   }
 
   async function optionalMic() {
+    unlockAudio();
     if (busy || listening) return;
     if (!canListen()) {
       s.toastMsg("Type your message below — mic not required");
