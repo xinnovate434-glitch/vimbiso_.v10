@@ -10,7 +10,12 @@ export function canListen(): boolean {
 }
 
 export function canSpeak(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window;
+  if (typeof window === "undefined") return false;
+  try {
+    return typeof window.speechSynthesis !== "undefined" && window.speechSynthesis !== null;
+  } catch {
+    return false;
+  }
 }
 
 type Rec = {

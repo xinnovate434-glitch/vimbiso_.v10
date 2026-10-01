@@ -1,110 +1,121 @@
 import { config } from "./config";
+import { parseDeal } from "./deal-desk";
 
 export function aiConfigured() {
-  return Boolean(config.gemini.apiKey);
+  return Boolean(config.gemini.apiKey && String(config.gemini.apiKey).length > 10);
 }
 
-const SYSTEM = `You are Vimby, the voice and chat assistant inside the Vimbiso Network app (Zimbabwe informal trade). Speak as Vimby — friendly, short, professional.
+const SYSTEM = `You are Vimby, voice assistant inside Vimbiso Network (Zimbabwe informal trade).
+ONLY help with this app: buy, sell, bids, offers, delivery, map, chat, meet points, trust, EcoCash/cash on collect.
+Never invent fake traders or prices. 1–3 short spoken sentences. Simple English.
+Ask one clear next question when needed.`;
 
-STRICT RULES:
-- ONLY answer questions about Vimbiso Network: buying, selling, bids, offers, traders, buyers, delivery, prices in USD/ZWL context, EcoCash/cash on collect, pooling (mukando), network map, trust/Vimbiso ID, USSD lite, and how to use THIS app.
-- If the user asks about politics, homework, general knowledge, other apps, or anything off-topic, reply in one short line: "I only help with Vimbiso Network trading. Tell me what you need to buy or sell."
-- Never invent fake traders, names, or live prices. If no live data is provided in the context, say so and guide them to post a bid or open Network map / Messages.
-- Be interactive: ask one clear next question (qty, city, quality, delivery vs collect).
-- 1–3 short sentences max. Simple English (or match user if they write Shona/Ndebele briefly).
-- When they name a product (e.g. bananas), help them build a bid: item, quantity, unit, and next step in the app.`;
+/** Local brain when Gemini key is missing or API fails — still useful for low-literacy / blind users. */
+export function localAssist(userMessage: string, role?: string, name?: string): string {
+  const who = (name || "").trim().split(/\s+/)[0] || "friend";
+  const t = (userMessage || "").trim().toLowerCase();
+  const draft = parseDeal(userMessage || "");
 
-export type NetworkContext = {
-  role?: string;
-  city?: string;
-  name?: string;
-  onlineTraders?: number;
-  sampleNames?: string[];
-};
+  if (!t || /hello|hi|hey|mhoroi|sawubona/.test(t)) {
+    if (role === "trader") return `Hello ${who}. I'm Vimby. What are we selling today? Say the product and price.`;
+    if (role === "delivery") return `Hello ${who}. I'm Vimby. Say open jobs if you want delivery work near you.`;
+    return `Hello ${who}. I'm Vimby on Vimbiso Network. What are we buying today? Say the item and quantity.`;
+  }
 
-/** Vimbiso business-only Gemini reply */
+  if (/help|what can you|how (do|to)|blind|can't see|cannot see/.test(t)) {
+    return `I am Vimby. Speak or type what you need. Say buy tomatoes, find nearby, open chat, or hang up for the home screen. I only help inside Vimbiso Network.`;
+  }
+
+  if (/chat|message|sms/.test(t)) {
+    return `Opening chat. You can message people you match with on the network.`;
+  }
+  if (/map|nearby|near me|find|where|radar/.test(t)) {
+    return `Opening Find nearby. The map expands from your position. Only real network users appear.`;
+  }
+  if (/sell|offer|request/.test(t) && role === "trader") {
+    return `Opening buyer requests. Answer live needs on the network.`;
+  }
+  if (/deliver|job|ride/.test(t)) {
+    return role === "delivery"
+      ? `Opening delivery jobs near you.`
+      : `You can ask for delivery after you match a trader. Opening the map.`;
+  }
+
+  if (draft) {
+    const price = draft.maxPrice != null ? ` max ${draft.maxPrice} dollars` : "";
+    const city = draft.city ? ` in ${draft.city}` : "";
+    return `Got it ${who}: ${draft.qty} ${draft.unit} of ${draft.item}${price}${city}. I will open My need so you can post this on the live network.`;
+  }
+
+  if (/buy|need|want|order|tomato|maize|onion|banana|meal/.test(t)) {
+    return `Tell me the quantity and your max price, for example twenty kg tomatoes max fifteen. Then I open My need for you.`;
+  }
+
+  return `I'm with you on Vimbiso only. Say what to buy or sell, or say map, chat, or help.`;
+}
+
+const MODELS = [
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-flash-latest",
+];
+
 export async function assistReply(
   userMessage: string,
-  ctx: NetworkContext = {},
+  contextLine?: string,
+  meta?: { role?: string; name?: string },
 ): Promise<string> {
   const key = config.gemini.apiKey;
-  const contextLine = [
-    ctx.role ? `User role: ${ctx.role}` : "",
-    ctx.city ? `City: ${ctx.city}` : "",
-    ctx.name ? `Name: ${ctx.name}` : "",
-    typeof ctx.onlineTraders === "number"
-      ? `Approved network users visible now: ${ctx.onlineTraders}`
-      : "",
-    ctx.sampleNames?.length
-      ? `Some network display names (not demo): ${ctx.sampleNames.slice(0, 8).join(", ")}`
-      : "No other network users in context yet.",
-  ]
-    .filter(Boolean)
-    .join(". ");
+  const fallback = () => localAssist(userMessage, meta?.role, meta?.name);
 
-  if (!key) {
-    const m = (userMessage || "").toLowerCase();
-    if (!m || /hello|hi|hey|how are/.test(m)) {
-      return "Welcome to Vimbiso Network. Tell me what you want to buy or sell — I'll help you use this app only.";
-    }
-    if (/banana|tomato|meal|maize|onion|potato|need|want|buy|sell/.test(m)) {
-      return `Got it: "${userMessage}". Open Build a bid, set quantity and your price, then Find traders on the network map. I only assist with Vimbiso trading.`;
-    }
-    return "I only help with Vimbiso Network (buy, sell, bids, map, messages). What do you need on the network?";
+  if (!key || String(key).length < 10) {
+    return fallback();
   }
 
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`,
+  const bodyBase = {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM }] },
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text:
-                    (contextLine ? `App context: ${contextLine}\n\n` : "") +
-                    `User message: ${userMessage || "opened assistant"}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: { maxOutputTokens: 180, temperature: 0.4 },
-        }),
+        role: "user",
+        parts: [
+          {
+            text:
+              (contextLine ? `App context: ${contextLine}\n` : "") +
+              (meta?.name ? `User name: ${meta.name}. ` : "") +
+              (meta?.role ? `Role: ${meta.role}. ` : "") +
+              `User said: ${userMessage || "opened Vimby"}`,
+          },
+        ],
       },
-    );
-    const data = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-      error?: { message?: string };
-    };
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (text) return text;
-    if (data.error?.message) {
-      return "AI is briefly unavailable. Use Build a bid or Network map — still inside Vimbiso only.";
+    ],
+    generationConfig: { maxOutputTokens: 160, temperature: 0.35 },
+  };
+
+  for (const model of MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyBase),
+        },
+      );
+      const data = (await res.json()) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+        error?: { message?: string };
+      };
+      const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("").trim();
+      if (text) return text;
+    } catch {
+      /* try next model */
     }
-  } catch {
-    /* fall through */
   }
-  return "Could not reach Gemini. Type your product on Home and Build a bid on Vimbiso Network.";
+
+  return fallback();
 }
 
-/** First-open welcome lines (typed on screen) */
 export function welcomeScript(name?: string, role?: string): string[] {
-  const who = name ? `, ${name}` : "";
-  const roleHint =
-    role === "trader"
-      ? "As a trader you can answer buyer requests and post offers on the live network."
-      : role === "delivery"
-        ? "As delivery you can take jobs between buyers and traders."
-        : "You can say what you need, pool with neighbours, and meet traders on the network map.";
-  return [
-    `Hello${who}. I'm Vimby — welcome to Vimbiso Network.`,
-    "Vimbiso Network is a live trading network for buyers, traders, and delivery.",
-    roleHint,
-    "Talk or type anytime. What do you need today?",
-  ];
+  return [localAssist("hello", role, name)];
 }
